@@ -7,7 +7,7 @@ import torch
 from monai.networks.nets import UNet
 from monai.transforms import (
     Compose,
-    AddChannel,
+    EnsureChannelFirst,
     Resize,
     NormalizeIntensity,
     ToTensor,
@@ -113,7 +113,7 @@ class MonaiService(IDiagnosisProvider):
             Composed transform
         """
         return Compose([
-            AddChannel(keys="image"),
+            EnsureChannelFirst(keys="image"),
             Resize(spatial_size=(256, 256), keys="image"),
             NormalizeIntensity(keys="image"),
             ToTensor(keys="image"),
