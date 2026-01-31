@@ -47,27 +47,16 @@ def get_llm_service() -> LLMService:
     return LLMService()
 
 
-def get_report_generator(
-    kheops_service: KheopsService = None,
-    dicom_parser: DicomParserService = None,
-    monai_service: MonaiService = None,
-    llm_service: LLMService = None,
-) -> ReportGenerator:
+def get_report_generator() -> ReportGenerator:
     """
     Get report generator instance with dependencies.
-
-    Args:
-        kheops_service: Kheops service (injected)
-        dicom_parser: DICOM parser (injected)
-        monai_service: MONAI service (injected)
-        llm_service: LLM service (injected)
 
     Returns:
         ReportGenerator instance
     """
     return ReportGenerator(
-        kheops_client=kheops_service or get_kheops_service(),
-        dicom_parser=dicom_parser or get_dicom_parser(),
-        diagnosis_provider=monai_service or get_monai_service(),
-        report_generator=llm_service or get_llm_service(),
+        kheops_client=get_kheops_service(),
+        dicom_parser=get_dicom_parser(),
+        diagnosis_provider=get_monai_service(),
+        report_generator=get_llm_service(),
     )

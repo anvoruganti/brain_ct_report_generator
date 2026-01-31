@@ -1,6 +1,6 @@
 """FastAPI route definitions."""
 
-from typing import Annotated
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
@@ -17,8 +17,6 @@ from backend.app.models.schemas import (
     StudyResponse,
     SeriesResponse,
 )
-from backend.app.services.interfaces import IKheopsClient
-from backend.app.services.report_generator import ReportGenerator
 
 router = APIRouter(prefix="/api", tags=["api"])
 
@@ -37,7 +35,7 @@ async def health_check() -> HealthResponse:
 @router.get("/kheops/studies", response_model=StudiesResponse)
 async def get_studies(
     album_token: str,
-    kheops_service: Annotated[IKheopsClient, Depends(get_kheops_service)],
+    kheops_service: Any = Depends(get_kheops_service),  # type: ignore
 ) -> StudiesResponse:
     """
     Get all studies from a Kheops album.
@@ -73,7 +71,7 @@ async def get_studies(
 async def get_series(
     study_id: str,
     album_token: str,
-    kheops_service: Annotated[IKheopsClient, Depends(get_kheops_service)],
+    kheops_service: Any = Depends(get_kheops_service),  # type: ignore
 ) -> SeriesListResponse:
     """
     Get all series within a study.
@@ -109,7 +107,7 @@ async def get_series(
 @router.post("/inference/from-kheops", response_model=ReportResponse)
 async def generate_report_from_kheops(
     request: InferenceFromKheopsRequest,
-    report_generator: Annotated[ReportGenerator, Depends(get_report_generator)],
+    report_generator: Any = Depends(get_report_generator),  # type: ignore
 ) -> ReportResponse:
     """
     Generate report from Kheops study.
@@ -155,8 +153,8 @@ async def generate_report_from_kheops(
 
 @router.post("/inference/from-dicom", response_model=ReportResponse)
 async def generate_report_from_dicom(
-    report_generator: Annotated[ReportGenerator, Depends(get_report_generator)],
     dicom_file: UploadFile = File(...),
+    report_generator: Any = Depends(get_report_generator),  # type: ignore
 ) -> ReportResponse:
     """
     Generate report from uploaded DICOM file.
