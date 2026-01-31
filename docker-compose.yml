@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - KHEOPS_BASE_URL=${KHEOPS_BASE_URL:-https://demo.kheops.online}
+      - KHEOPS_ALBUM_TOKEN=${KHEOPS_ALBUM_TOKEN}
+      - MONAI_MODEL_PATH=${MONAI_MODEL_PATH:-models/brain_ct_model.pth}
+      - MONAI_DEVICE=${MONAI_DEVICE:-cpu}
+      - LLM_MODEL_NAME=${LLM_MODEL_NAME:-llama3}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - CORS_ORIGINS=["http://localhost:8501"]
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./backend/app:/app/app
+      - ./models:/app/models
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
