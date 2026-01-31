@@ -138,7 +138,7 @@ class TestReportGenerator:
         assert "report" in result
         mock_kheops.fetch_series.assert_called_once()
         mock_kheops.fetch_instances.assert_called_once_with("token", "study1", "series1")
-        mock_kheops.download_instance.assert_called_once_with("token", "instance1")
+        mock_kheops.download_instance.assert_called_once_with("token", "study1", "series1", "instance1")
 
     def test_generate_report_from_album_no_series(self):
         """Test report generation with no series found."""

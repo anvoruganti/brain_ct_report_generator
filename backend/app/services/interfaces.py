@@ -66,12 +66,14 @@ class IKheopsClient(ABC):
         pass
 
     @abstractmethod
-    def download_instance(self, album_token: str, instance_id: str) -> bytes:
+    def download_instance(self, album_token: str, study_id: str, series_id: str, instance_id: str) -> bytes:
         """
         Download a DICOM instance as bytes.
 
         Args:
             album_token: Token for album authentication
+            study_id: ID of the study
+            series_id: ID of the series
             instance_id: ID of the DICOM instance
 
         Returns:

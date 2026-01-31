@@ -1,8 +1,11 @@
 """FastAPI route definitions."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+
+logger = logging.getLogger(__name__)
 
 from backend.app.dependencies import (
     get_kheops_service,
@@ -123,6 +126,7 @@ async def generate_report_from_kheops(
         HTTPException: If report generation fails
     """
     try:
+        logger.info(f"Generating report for study {request.study_id}, series {request.series_id}")
         result = report_generator.generate_report_from_album(
             request.album_token,
             request.study_id,
@@ -148,6 +152,7 @@ async def generate_report_from_kheops(
             dicom_metadata=result["dicom_metadata"],
         )
     except Exception as e:
+        logger.exception(f"Error generating report: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
 
 

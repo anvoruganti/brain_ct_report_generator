@@ -236,10 +236,12 @@ class TestKheopsService:
 
         service = KheopsService()
         token = "test_token"
+        study_id = "study1"
+        series_id = "series1"
         instance_id = "instance1"
 
         # Act: Download instance
-        content = service.download_instance(token, instance_id)
+        content = service.download_instance(token, study_id, series_id, instance_id)
 
         # Assert: Verify content is returned
         assert content == b"DICOM_FILE_CONTENT"
@@ -253,8 +255,10 @@ class TestKheopsService:
 
         service = KheopsService()
         token = "test_token"
+        study_id = "study1"
+        series_id = "series1"
         instance_id = "instance1"
 
         # Act & Assert: Verify KheopsAPIError is raised
         with pytest.raises(KheopsAPIError):
-            service.download_instance(token, instance_id)
+            service.download_instance(token, study_id, series_id, instance_id)

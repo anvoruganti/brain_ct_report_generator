@@ -71,7 +71,9 @@ class ReportGenerator:
 
             # Download the first instance
             instance_id = instance_ids[0]
-            dicom_bytes = self.kheops_client.download_instance(album_token, instance_id)
+            dicom_bytes = self.kheops_client.download_instance(
+                album_token, study_id, target_series.series_id, instance_id
+            )
 
             return self._process_dicom_to_report(dicom_bytes)
         except Exception as e:
