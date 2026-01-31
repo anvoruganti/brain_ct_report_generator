@@ -155,8 +155,8 @@ async def generate_report_from_kheops(
 
 @router.post("/inference/from-dicom", response_model=ReportResponse)
 async def generate_report_from_dicom(
-    dicom_file: UploadFile = File(...),
     report_generator: Annotated[ReportGenerator, Depends(get_report_generator)],
+    dicom_file: UploadFile = File(...),
 ) -> ReportResponse:
     """
     Generate report from uploaded DICOM file.
