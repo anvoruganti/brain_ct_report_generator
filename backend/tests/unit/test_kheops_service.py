@@ -80,6 +80,69 @@ class TestKheopsService:
         assert studies[0].study_description == "Brain CT"
 
     @patch("backend.app.services.kheops_service.requests.request")
+    def test_fetch_studies_with_dict_patient_name(self, mock_request):
+        """Test fetch_studies with patient name as dictionary."""
+        # Arrange: Mock response with dict patient name
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {
+                "0020000D": {"Value": ["study1"]},
+                "00080020": {"Value": ["20240101"]},
+                "00081030": {"Value": ["Brain CT"]},
+                "00100020": {"Value": ["patient1"]},
+                "00100010": {"Value": [{"Alphabetic": "SUJATHA DR.SHANKAR NAIK MS ORTHO"}]},
+            }
+        ]
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        service = KheopsService()
+        token = "test_token"
+
+        # Act: Fetch studies
+        studies = service.fetch_studies(token)
+
+        # Assert: Verify patient name is parsed correctly
+        assert len(studies) == 1
+        assert studies[0].patient_name == "SUJATHA DR.SHANKAR NAIK MS ORTHO"
+
+    def test_parse_patient_name_string(self):
+        """Test parsing patient name as string."""
+        # Arrange: String patient name
+        service = KheopsService()
+        name = "John^Doe"
+
+        # Act: Parse name
+        result = service._parse_patient_name(name)
+
+        # Assert: Verify string returned
+        assert result == "John^Doe"
+
+    def test_parse_patient_name_dict(self):
+        """Test parsing patient name as dictionary."""
+        # Arrange: Dict patient name
+        service = KheopsService()
+        name = {"Alphabetic": "SUJATHA DR.SHANKAR NAIK MS ORTHO"}
+
+        # Act: Parse name
+        result = service._parse_patient_name(name)
+
+        # Assert: Verify alphabetic value returned
+        assert result == "SUJATHA DR.SHANKAR NAIK MS ORTHO"
+
+    def test_parse_patient_name_list(self):
+        """Test parsing patient name as list."""
+        # Arrange: List with dict patient name
+        service = KheopsService()
+        name = [{"Alphabetic": "Test Patient"}]
+
+        # Act: Parse name
+        result = service._parse_patient_name(name)
+
+        # Assert: Verify alphabetic value returned
+        assert result == "Test Patient"
+
+    @patch("backend.app.services.kheops_service.requests.request")
     def test_fetch_studies_api_error(self, mock_request):
         """Test fetch_studies with API error."""
         # Arrange: Mock API error
