@@ -1,7 +1,7 @@
 """Streamlit frontend application."""
 
 import streamlit as st
-from frontend.utils.api_client import APIClient
+from utils.api_client import APIClient
 
 st.set_page_config(
     page_title="Brain CT Report Generator",
