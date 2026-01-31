@@ -291,16 +291,28 @@ class KheopsService(IKheopsClient):
                     # Check if response is actually DICOM (binary)
                     content_type = response.headers.get("Content-Type", "").lower()
                     content_length = len(response.content)
+                    content_start = response.content[:100] if content_length > 100 else response.content
+                    
+                    # Reject JSON metadata immediately
+                    if content_start.startswith(b"{") or content_start.startswith(b"["):
+                        continue
+                    
+                    # Reject HTML error pages
+                    if content_start.startswith(b"<!doctype") or content_start.startswith(b"<html"):
+                        continue
                     
                     # DICOM files are typically binary and larger than metadata
-                    if content_length > 1000 and (
-                        "application/dicom" in content_type or 
-                        "application/octet-stream" in content_type or
-                        content_type == "" or
-                        (content_length > 5000 and not "json" in content_type)
-                    ):
-                        # Verify it's not HTML error page
-                        if not response.content.startswith(b"<!doctype") and not response.content.startswith(b"<html"):
+                    # They should start with DICM (128 bytes offset) or have binary content
+                    if content_length > 1000:
+                        # Check for DICOM signature (at offset 128)
+                        if content_length >= 132 and content_start[128:132] == b"DICM":
+                            return response.content
+                        # Or accept if content type suggests DICOM and it's binary
+                        if (
+                            "application/dicom" in content_type or 
+                            "application/octet-stream" in content_type or
+                            (content_length > 5000 and "json" not in content_type and "html" not in content_type)
+                        ):
                             return response.content
                     
                     # If it's JSON, this is metadata, not the file

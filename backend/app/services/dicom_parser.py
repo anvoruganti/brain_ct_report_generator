@@ -28,7 +28,20 @@ class DicomParserService(IDicomParser):
             DicomParseError: If parsing fails
         """
         try:
-            dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            # Check if content is JSON (metadata) instead of binary DICOM
+            if dicom_bytes.startswith(b"{") or dicom_bytes.startswith(b"["):
+                raise DicomParseError(
+                    "Received JSON metadata instead of binary DICOM file. "
+                    "The Kheops API may not support direct file downloads."
+                )
+            
+            # Try reading with force=True to handle files without standard DICOM header
+            try:
+                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
+            except Exception:
+                # If force=True fails, try without it
+                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            
             metadata = self._extract_metadata(dicom_file)
             metadata["raw_bytes"] = dicom_bytes
 
@@ -62,7 +75,12 @@ class DicomParserService(IDicomParser):
             if dicom_bytes is None:
                 raise DicomParseError("Raw DICOM bytes not found in metadata")
 
-            dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            # Try reading with force=True to handle files without standard DICOM header
+            try:
+                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
+            except Exception:
+                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            
             pixel_array = dicom_file.pixel_array
 
             return pixel_array.astype(np.float32)
