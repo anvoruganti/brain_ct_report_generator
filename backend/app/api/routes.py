@@ -1,0 +1,195 @@
+"""FastAPI route definitions."""
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+
+from backend.app.dependencies import (
+    get_kheops_service,
+    get_report_generator,
+)
+from backend.app.models.schemas import (
+    HealthResponse,
+    StudiesResponse,
+    SeriesListResponse,
+    ReportResponse,
+    InferenceFromKheopsRequest,
+    StudyResponse,
+    SeriesResponse,
+)
+from backend.app.services.interfaces import IKheopsClient
+from backend.app.services.report_generator import ReportGenerator
+
+router = APIRouter(prefix="/api", tags=["api"])
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check() -> HealthResponse:
+    """
+    Health check endpoint.
+
+    Returns:
+        Health status
+    """
+    return HealthResponse()
+
+
+@router.get("/kheops/studies", response_model=StudiesResponse)
+async def get_studies(
+    album_token: str,
+    kheops_service: IKheopsClient = Depends(get_kheops_service),
+) -> StudiesResponse:
+    """
+    Get all studies from a Kheops album.
+
+    Args:
+        album_token: Album token for authentication
+        kheops_service: Kheops service (injected)
+
+    Returns:
+        List of studies
+
+    Raises:
+        HTTPException: If API request fails
+    """
+    try:
+        studies = kheops_service.fetch_studies(album_token)
+        study_responses = [
+            StudyResponse(
+                study_id=study.study_id,
+                study_date=study.study_date,
+                study_description=study.study_description,
+                patient_id=study.patient_id,
+                patient_name=study.patient_name,
+            )
+            for study in studies
+        ]
+        return StudiesResponse(studies=study_responses)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch studies: {str(e)}")
+
+
+@router.get("/kheops/studies/{study_id}/series", response_model=SeriesListResponse)
+async def get_series(
+    study_id: str,
+    album_token: str,
+    kheops_service: IKheopsClient = Depends(get_kheops_service),
+) -> SeriesListResponse:
+    """
+    Get all series within a study.
+
+    Args:
+        study_id: Study instance UID
+        album_token: Album token for authentication
+        kheops_service: Kheops service (injected)
+
+    Returns:
+        List of series
+
+    Raises:
+        HTTPException: If API request fails
+    """
+    try:
+        series_list = kheops_service.fetch_series(album_token, study_id)
+        series_responses = [
+            SeriesResponse(
+                series_id=series.series_id,
+                study_id=series.study_id,
+                series_description=series.series_description,
+                modality=series.modality,
+                instance_count=series.instance_count,
+            )
+            for series in series_list
+        ]
+        return SeriesListResponse(series=series_responses)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch series: {str(e)}")
+
+
+@router.post("/inference/from-kheops", response_model=ReportResponse)
+async def generate_report_from_kheops(
+    request: InferenceFromKheopsRequest,
+    report_generator: ReportGenerator = Depends(get_report_generator),
+) -> ReportResponse:
+    """
+    Generate report from Kheops study.
+
+    Args:
+        request: Request with album token and study ID
+        report_generator: Report generator (injected)
+
+    Returns:
+        Generated report with diagnosis
+
+    Raises:
+        HTTPException: If report generation fails
+    """
+    try:
+        result = report_generator.generate_report_from_album(
+            request.album_token,
+            request.study_id,
+            request.series_id,
+        )
+
+        from backend.app.models.schemas import ClinicalReportResponse, DiagnosisResponse
+
+        return ReportResponse(
+            report=ClinicalReportResponse(
+                clinical_history=result["report"].clinical_history,
+                findings=result["report"].findings,
+                impression=result["report"].impression,
+                recommendations=result["report"].recommendations,
+                generated_at=result["report"].generated_at,
+            ),
+            diagnosis=DiagnosisResponse(
+                abnormalities=result["diagnosis"].abnormalities,
+                confidence_scores=result["diagnosis"].confidence_scores,
+                findings=result["diagnosis"].findings,
+                timestamp=result["diagnosis"].timestamp,
+            ),
+            dicom_metadata=result["dicom_metadata"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
+
+
+@router.post("/inference/from-dicom", response_model=ReportResponse)
+async def generate_report_from_dicom(
+    dicom_file: UploadFile = File(...),
+    report_generator: ReportGenerator = Depends(get_report_generator),
+) -> ReportResponse:
+    """
+    Generate report from uploaded DICOM file.
+
+    Args:
+        dicom_file: Uploaded DICOM file
+        report_generator: Report generator (injected)
+
+    Returns:
+        Generated report with diagnosis
+
+    Raises:
+        HTTPException: If report generation fails
+    """
+    try:
+        dicom_bytes = await dicom_file.read()
+        result = report_generator.generate_report_from_dicom(dicom_bytes)
+
+        from backend.app.models.schemas import ClinicalReportResponse, DiagnosisResponse
+
+        return ReportResponse(
+            report=ClinicalReportResponse(
+                clinical_history=result["report"].clinical_history,
+                findings=result["report"].findings,
+                impression=result["report"].impression,
+                recommendations=result["report"].recommendations,
+                generated_at=result["report"].generated_at,
+            ),
+            diagnosis=DiagnosisResponse(
+                abnormalities=result["diagnosis"].abnormalities,
+                confidence_scores=result["diagnosis"].confidence_scores,
+                findings=result["diagnosis"].findings,
+                timestamp=result["diagnosis"].timestamp,
+            ),
+            dicom_metadata=result["dicom_metadata"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")
