@@ -149,12 +149,18 @@ class KheopsService(IKheopsClient):
                 patient_id_tag = study_data.get("00100020", {})
                 patient_name_tag = study_data.get("00100010", {})
 
+                study_id_value = study_id_tag.get("Value", [""])
+                study_date_value = study_date_tag.get("Value") if study_date_tag.get("Value") else None
+                study_desc_value = study_desc_tag.get("Value") if study_desc_tag.get("Value") else None
+                patient_id_value = patient_id_tag.get("Value") if patient_id_tag.get("Value") else None
+                patient_name_value = patient_name_tag.get("Value") if patient_name_tag.get("Value") else None
+
                 study = Study(
-                    study_id=self._parse_dicom_value(study_id_tag.get("Value", [""])[0] if study_id_tag.get("Value") else ""),
-                    study_date=self._parse_dicom_value(study_date_tag.get("Value")[0] if study_date_tag.get("Value") else None),
-                    study_description=self._parse_dicom_value(study_desc_tag.get("Value")[0] if study_desc_tag.get("Value") else None),
-                    patient_id=self._parse_dicom_value(patient_id_tag.get("Value")[0] if patient_id_tag.get("Value") else None),
-                    patient_name=self._parse_patient_name(patient_name_tag.get("Value") if patient_name_tag.get("Value") else None),
+                    study_id=self._parse_dicom_value(study_id_value[0] if study_id_value else ""),
+                    study_date=self._parse_dicom_value(study_date_value[0] if study_date_value else None),
+                    study_description=self._parse_dicom_value(study_desc_value[0] if study_desc_value else None),
+                    patient_id=self._parse_dicom_value(patient_id_value[0] if patient_id_value else None),
+                    patient_name=self._parse_patient_name(patient_name_value),
                 )
                 studies.append(study)
 
