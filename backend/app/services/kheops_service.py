@@ -256,42 +256,70 @@ class KheopsService(IKheopsClient):
             KheopsAPIError: If download fails
         """
         headers = self._get_headers(album_token)
-        headers["Accept"] = "application/dicom"
-
-        # Try multiple URL patterns
-        urls_to_try = []
         
-        # If we have the instance URL from metadata, try it first with /file appended
+        # Try multiple URL patterns with different Accept headers
+        url_patterns = []
+        
+        # If we have the instance URL from metadata, try it first
         if instance_url:
-            urls_to_try.append(f"{instance_url}/file")
-            urls_to_try.append(instance_url)  # Try without /file too
+            url_patterns.append((instance_url, ["application/dicom", "application/octet-stream", "*/*"]))
+            url_patterns.append((f"{instance_url}/file", ["application/dicom", "application/octet-stream", "*/*"]))
         
         # Standard DICOMweb patterns
-        urls_to_try.append(f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}/file")
-        urls_to_try.append(f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}")
+        base_url_pattern = f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}"
+        url_patterns.append((f"{base_url_pattern}/file", ["application/dicom", "application/octet-stream", "*/*"]))
+        url_patterns.append((base_url_pattern, ["application/dicom", "application/octet-stream", "*/*"]))
         
-        # Alternative patterns
-        urls_to_try.append(f"{self.base_url}/api/instances/{instance_id}/file")
-        urls_to_try.append(f"{self.base_url}/api/instances/{instance_id}")
+        # WADO-RS style (without /api prefix)
+        wado_pattern = f"{self.base_url}/studies/{study_id}/series/{series_id}/instances/{instance_id}"
+        url_patterns.append((f"{wado_pattern}/file", ["application/dicom", "application/octet-stream"]))
+        url_patterns.append((wado_pattern, ["application/dicom", "application/octet-stream"]))
 
         last_error = None
-        for url in urls_to_try:
-            try:
-                response = requests.get(url, headers=headers, timeout=60)
-                response.raise_for_status()
-                # Check if response is actually DICOM (binary) or JSON (metadata)
-                content_type = response.headers.get("Content-Type", "")
-                if "application/dicom" in content_type or len(response.content) > 1000:
-                    return response.content
-                # If it's JSON, this is metadata, not the file
-                if "application/json" in content_type or "application/dicom+json" in content_type:
+        attempted_urls = []
+        
+        for url, accept_options in url_patterns:
+            for accept_header in accept_options:
+                try:
+                    test_headers = headers.copy()
+                    test_headers["Accept"] = accept_header
+                    attempted_urls.append(f"{url} (Accept: {accept_header})")
+                    
+                    response = requests.get(url, headers=test_headers, timeout=60)
+                    response.raise_for_status()
+                    
+                    # Check if response is actually DICOM (binary)
+                    content_type = response.headers.get("Content-Type", "").lower()
+                    content_length = len(response.content)
+                    
+                    # DICOM files are typically binary and larger than metadata
+                    if content_length > 1000 and (
+                        "application/dicom" in content_type or 
+                        "application/octet-stream" in content_type or
+                        content_type == "" or
+                        (content_length > 5000 and not "json" in content_type)
+                    ):
+                        # Verify it's not HTML error page
+                        if not response.content.startswith(b"<!doctype") and not response.content.startswith(b"<html"):
+                            return response.content
+                    
+                    # If it's JSON, this is metadata, not the file
+                    if "application/json" in content_type or "application/dicom+json" in content_type:
+                        continue
+                        
+                except requests.exceptions.RequestException as e:
+                    last_error = e
                     continue
-            except requests.exceptions.RequestException as e:
-                last_error = e
-                continue
 
         # If all URLs failed, raise error with details
+        error_details = "\n".join(f"  - {url}" for url in attempted_urls[:10])  # Show first 10
+        if len(attempted_urls) > 10:
+            error_details += f"\n  ... and {len(attempted_urls) - 10} more attempts"
+        
         raise KheopsAPIError(
-            f"Failed to download DICOM instance {instance_id} after trying {len(urls_to_try)} URL patterns. "
-            f"Last error: {str(last_error) if last_error else 'Unknown error'}"
+            f"Failed to download DICOM instance {instance_id} after trying {len(attempted_urls)} URL/header combinations.\n"
+            f"Attempted URLs:\n{error_details}\n"
+            f"Last error: {str(last_error) if last_error else 'Unknown error'}\n"
+            f"Note: Kheops demo instance may not support direct file downloads. "
+            f"Consider using the view URL or checking Kheops documentation for alternative download methods."
         )
