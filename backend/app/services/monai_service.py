@@ -11,6 +11,7 @@ from monai.transforms import (
     Resize,
     NormalizeIntensity,
     ToTensor,
+    Transform,
 )
 
 from backend.app.config import Settings, get_settings
@@ -73,9 +74,8 @@ class MonaiService(IDiagnosisProvider):
         if len(image.shape) == 2:
             image = np.expand_dims(image, axis=0)
 
-        image_dict = {"image": image}
-        preprocessed = self.preprocess_transform(image_dict)
-        return preprocessed["image"].unsqueeze(0).to(self.device)
+        preprocessed = self.preprocess_transform(image)
+        return preprocessed.unsqueeze(0).to(self.device)
 
     def run_inference(self, image_tensor: torch.Tensor) -> DiagnosisResult:
         """
@@ -113,10 +113,10 @@ class MonaiService(IDiagnosisProvider):
             Composed transform
         """
         return Compose([
-            EnsureChannelFirst(keys="image"),
-            Resize(spatial_size=(256, 256), keys="image"),
-            NormalizeIntensity(keys="image"),
-            ToTensor(keys="image"),
+            EnsureChannelFirst(),
+            Resize(spatial_size=(256, 256)),
+            NormalizeIntensity(),
+            ToTensor(),
         ])
 
     def _extract_abnormalities(self, predicted_class: torch.Tensor, probabilities: torch.Tensor) -> List[str]:

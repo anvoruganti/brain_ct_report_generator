@@ -85,6 +85,7 @@ class TestMonaiService:
         # Assert: Verify tensor shape
         assert isinstance(tensor, torch.Tensor)
         assert tensor.dim() == 4
+        assert tensor.shape[1] == 1
 
     def test_preprocess_image_3d(self):
         """Test preprocessing 3D image."""
@@ -98,6 +99,7 @@ class TestMonaiService:
         # Assert: Verify tensor shape
         assert isinstance(tensor, torch.Tensor)
         assert tensor.dim() == 4
+        assert tensor.shape[1] == 1
 
     def test_run_inference_without_model(self):
         """Test inference without loaded model."""
