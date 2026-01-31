@@ -203,9 +203,9 @@ class KheopsService(IKheopsClient):
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             raise KheopsAPIError(f"Failed to parse series response: {str(e)}") from e
 
-    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[str]:
+    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[dict]:
         """
-        Fetch all instance IDs within a series.
+        Fetch all instances within a series.
 
         Args:
             album_token: Token for album authentication
@@ -213,7 +213,7 @@ class KheopsService(IKheopsClient):
             series_id: ID of the series
 
         Returns:
-            List of instance IDs
+            List of instance dictionaries with id and optional url
 
         Raises:
             KheopsAPIError: If API request fails
@@ -223,18 +223,22 @@ class KheopsService(IKheopsClient):
 
         try:
             instances_data = response.json()
-            instance_ids = []
+            instances = []
 
             for instance_item in instances_data:
                 instance_id = instance_item.get("00080018", {}).get("Value", [""])[0]
+                instance_url = instance_item.get("00081190", {}).get("Value", [""])[0]
                 if instance_id:
-                    instance_ids.append(instance_id)
+                    instances.append({
+                        "instance_id": instance_id,
+                        "instance_url": instance_url if instance_url else None
+                    })
 
-            return instance_ids
+            return instances
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             raise KheopsAPIError(f"Failed to parse instances response: {str(e)}") from e
 
-    def download_instance(self, album_token: str, study_id: str, series_id: str, instance_id: str) -> bytes:
+    def download_instance(self, album_token: str, study_id: str, series_id: str, instance_id: str, instance_url: str = None) -> bytes:
         """
         Download a DICOM instance as bytes.
 
@@ -243,6 +247,7 @@ class KheopsService(IKheopsClient):
             study_id: ID of the study
             series_id: ID of the series
             instance_id: ID of the DICOM instance
+            instance_url: Optional URL from instance metadata (tag 00081190)
 
         Returns:
             DICOM file as bytes
@@ -250,13 +255,43 @@ class KheopsService(IKheopsClient):
         Raises:
             KheopsAPIError: If download fails
         """
-        url = f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}/file"
         headers = self._get_headers(album_token)
         headers["Accept"] = "application/dicom"
 
-        try:
-            response = requests.get(url, headers=headers, timeout=60)
-            response.raise_for_status()
-            return response.content
-        except requests.exceptions.RequestException as e:
-            raise KheopsAPIError(f"Failed to download DICOM instance: {str(e)}") from e
+        # Try multiple URL patterns
+        urls_to_try = []
+        
+        # If we have the instance URL from metadata, try it first with /file appended
+        if instance_url:
+            urls_to_try.append(f"{instance_url}/file")
+            urls_to_try.append(instance_url)  # Try without /file too
+        
+        # Standard DICOMweb patterns
+        urls_to_try.append(f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}/file")
+        urls_to_try.append(f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances/{instance_id}")
+        
+        # Alternative patterns
+        urls_to_try.append(f"{self.base_url}/api/instances/{instance_id}/file")
+        urls_to_try.append(f"{self.base_url}/api/instances/{instance_id}")
+
+        last_error = None
+        for url in urls_to_try:
+            try:
+                response = requests.get(url, headers=headers, timeout=60)
+                response.raise_for_status()
+                # Check if response is actually DICOM (binary) or JSON (metadata)
+                content_type = response.headers.get("Content-Type", "")
+                if "application/dicom" in content_type or len(response.content) > 1000:
+                    return response.content
+                # If it's JSON, this is metadata, not the file
+                if "application/json" in content_type or "application/dicom+json" in content_type:
+                    continue
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                continue
+
+        # If all URLs failed, raise error with details
+        raise KheopsAPIError(
+            f"Failed to download DICOM instance {instance_id} after trying {len(urls_to_try)} URL patterns. "
+            f"Last error: {str(last_error) if last_error else 'Unknown error'}"
+        )

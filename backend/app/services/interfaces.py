@@ -48,9 +48,9 @@ class IKheopsClient(ABC):
         pass
 
     @abstractmethod
-    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[str]:
+    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[dict]:
         """
-        Fetch all instance IDs within a series.
+        Fetch all instances within a series.
 
         Args:
             album_token: Token for album authentication
@@ -58,7 +58,7 @@ class IKheopsClient(ABC):
             series_id: ID of the series
 
         Returns:
-            List of instance IDs
+            List of instance dictionaries with 'instance_id' and optional 'instance_url'
 
         Raises:
             KheopsAPIError: If API request fails
@@ -66,7 +66,7 @@ class IKheopsClient(ABC):
         pass
 
     @abstractmethod
-    def download_instance(self, album_token: str, study_id: str, series_id: str, instance_id: str) -> bytes:
+    def download_instance(self, album_token: str, study_id: str, series_id: str, instance_id: str, instance_url: str = None) -> bytes:
         """
         Download a DICOM instance as bytes.
 
@@ -75,6 +75,7 @@ class IKheopsClient(ABC):
             study_id: ID of the study
             series_id: ID of the series
             instance_id: ID of the DICOM instance
+            instance_url: Optional URL from instance metadata (tag 00081190)
 
         Returns:
             DICOM file as bytes

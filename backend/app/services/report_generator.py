@@ -62,17 +62,19 @@ class ReportGenerator:
                 raise ReportGenerationError(f"Series {series_id} not found")
 
             # Fetch instances from the series
-            instance_ids = self.kheops_client.fetch_instances(
+            instances = self.kheops_client.fetch_instances(
                 album_token, study_id, target_series.series_id
             )
 
-            if not instance_ids:
+            if not instances:
                 raise ReportGenerationError(f"No instances found in series {target_series.series_id}")
 
             # Download the first instance
-            instance_id = instance_ids[0]
+            first_instance = instances[0]
+            instance_id = first_instance["instance_id"]
+            instance_url = first_instance.get("instance_url")
             dicom_bytes = self.kheops_client.download_instance(
-                album_token, study_id, target_series.series_id, instance_id
+                album_token, study_id, target_series.series_id, instance_id, instance_url
             )
 
             return self._process_dicom_to_report(dicom_bytes)

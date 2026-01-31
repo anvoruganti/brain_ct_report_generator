@@ -191,8 +191,14 @@ class TestKheopsService:
         # Arrange: Mock successful response
         mock_response = Mock()
         mock_response.json.return_value = [
-            {"00080018": {"Value": ["instance1"]}},
-            {"00080018": {"Value": ["instance2"]}},
+            {
+                "00080018": {"Value": ["instance1"]},
+                "00081190": {"Value": ["https://demo.kheops.online/api/studies/study1/series/series1/instances/instance1"]}
+            },
+            {
+                "00080018": {"Value": ["instance2"]},
+                "00081190": {"Value": ["https://demo.kheops.online/api/studies/study1/series/series1/instances/instance2"]}
+            },
         ]
         mock_response.raise_for_status = Mock()
         mock_request.return_value = mock_response
@@ -203,12 +209,14 @@ class TestKheopsService:
         series_id = "series1"
 
         # Act: Fetch instances
-        instance_ids = service.fetch_instances(token, study_id, series_id)
+        instances = service.fetch_instances(token, study_id, series_id)
 
-        # Assert: Verify instance IDs are parsed correctly
-        assert len(instance_ids) == 2
-        assert instance_ids[0] == "instance1"
-        assert instance_ids[1] == "instance2"
+        # Assert: Verify instances are parsed correctly
+        assert len(instances) == 2
+        assert instances[0]["instance_id"] == "instance1"
+        assert instances[0]["instance_url"] == "https://demo.kheops.online/api/studies/study1/series/series1/instances/instance1"
+        assert instances[1]["instance_id"] == "instance2"
+        assert instances[1]["instance_url"] == "https://demo.kheops.online/api/studies/study1/series/series1/instances/instance2"
 
     @patch("backend.app.services.kheops_service.requests.request")
     def test_fetch_instances_api_error(self, mock_request):
@@ -231,6 +239,7 @@ class TestKheopsService:
         # Arrange: Mock successful download
         mock_response = Mock()
         mock_response.content = b"DICOM_FILE_CONTENT"
+        mock_response.headers = {"Content-Type": "application/dicom"}
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
@@ -245,7 +254,7 @@ class TestKheopsService:
 
         # Assert: Verify content is returned
         assert content == b"DICOM_FILE_CONTENT"
-        mock_get.assert_called_once()
+        assert mock_get.called
 
     @patch("backend.app.services.kheops_service.requests.get")
     def test_download_instance_error(self, mock_get):
