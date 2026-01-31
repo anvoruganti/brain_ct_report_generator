@@ -35,12 +35,50 @@ class DicomParserService(IDicomParser):
                     "The Kheops API may not support direct file downloads."
                 )
             
-            # Try reading with force=True to handle files without standard DICOM header
+            # Check for DICOM signature at offset 128 (only for files large enough)
+            # Files created by pydicom.dcmwrite may not have this signature, so we're lenient
+            if len(dicom_bytes) >= 132:
+                has_dicm_signature = (
+                    dicom_bytes[128:132] == b"DICM" or 
+                    dicom_bytes[:4] == b"DICM"
+                )
+                # If file is large but doesn't have DICM signature, it might be invalid
+                # But we'll still try to parse it in case it's a valid DICOM without header
+                if len(dicom_bytes) > 10000 and not has_dicm_signature:
+                    # For large files, require DICM signature to avoid parsing JSON/metadata
+                    raise DicomParseError(
+                        "File does not appear to be a valid DICOM file. "
+                        "Missing DICM signature. "
+                        "The downloaded content may be metadata instead of binary DICOM data."
+                    )
+            
+            # Try reading DICOM file
+            dicom_file = None
+            parse_error = None
+            
             try:
-                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
-            except Exception:
-                # If force=True fails, try without it
                 dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            except Exception as e:
+                parse_error = e
+                # If standard read fails, try with force=True
+                try:
+                    dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
+                except Exception as force_error:
+                    raise DicomParseError(
+                        f"Failed to parse DICOM file: {str(e)}. "
+                        f"Force parsing also failed: {str(force_error)}"
+                    )
+            
+            # Verify we got a proper Dataset with required attributes
+            if dicom_file is None:
+                raise DicomParseError("Failed to read DICOM file")
+            
+            # Check if it's a FileMetaDataset (incomplete file)
+            if hasattr(dicom_file, 'file_meta') and not hasattr(dicom_file, 'StudyInstanceUID'):
+                raise DicomParseError(
+                    "DICOM file appears to be incomplete or metadata-only. "
+                    "Received FileMetaDataset instead of full Dataset."
+                )
             
             metadata = self._extract_metadata(dicom_file)
             metadata["raw_bytes"] = dicom_bytes
@@ -75,13 +113,34 @@ class DicomParserService(IDicomParser):
             if dicom_bytes is None:
                 raise DicomParseError("Raw DICOM bytes not found in metadata")
 
-            # Try reading with force=True to handle files without standard DICOM header
+            # Try reading DICOM file
+            dicom_file = None
             try:
-                dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
-            except Exception:
                 dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
+            except Exception:
+                # If standard read fails, try with force=True
+                try:
+                    dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
+                except Exception as e:
+                    raise DicomParseError(f"Failed to read DICOM file: {str(e)}")
             
-            pixel_array = dicom_file.pixel_array
+            if dicom_file is None:
+                raise DicomParseError("Failed to read DICOM file")
+            
+            # Verify pixel data is available
+            if not hasattr(dicom_file, 'pixel_array'):
+                raise DicomParseError(
+                    "DICOM file does not contain pixel data. "
+                    "This may be a metadata-only file."
+                )
+            
+            try:
+                pixel_array = dicom_file.pixel_array
+            except AttributeError as e:
+                raise DicomParseError(
+                    f"Failed to extract pixel array: {str(e)}. "
+                    "The DICOM file may be incomplete or corrupted."
+                )
 
             return pixel_array.astype(np.float32)
         except Exception as e:

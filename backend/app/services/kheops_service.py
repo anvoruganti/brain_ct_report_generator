@@ -304,14 +304,23 @@ class KheopsService(IKheopsClient):
                     # DICOM files are typically binary and larger than metadata
                     # They should start with DICM (128 bytes offset) or have binary content
                     if content_length > 1000:
-                        # Check for DICOM signature (at offset 128)
-                        if content_length >= 132 and content_start[128:132] == b"DICM":
-                            return response.content
-                        # Or accept if content type suggests DICOM and it's binary
+                        # Check for DICOM signature (at offset 128) - this is the most reliable indicator
+                        if content_length >= 132:
+                            # Check for DICM signature at offset 128
+                            if len(response.content) >= 132 and response.content[128:132] == b"DICM":
+                                return response.content
+                            # Also check if it starts with DICM (some files have it at the start)
+                            if response.content[:4] == b"DICM":
+                                return response.content
+                        
+                        # Fallback: accept if content type suggests DICOM and it's binary
+                        # But only if it's large enough and not JSON/HTML
                         if (
-                            "application/dicom" in content_type or 
-                            "application/octet-stream" in content_type or
-                            (content_length > 5000 and "json" not in content_type and "html" not in content_type)
+                            content_length > 10000 and  # DICOM files are usually > 10KB
+                            ("application/dicom" in content_type or 
+                             "application/octet-stream" in content_type) and
+                            "json" not in content_type and 
+                            "html" not in content_type
                         ):
                             return response.content
                     

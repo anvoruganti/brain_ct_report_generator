@@ -27,6 +27,8 @@ class TestDicomParserService:
         dicom_file.Modality = "CT"
         dicom_file.Rows = 512
         dicom_file.Columns = 512
+        dicom_file.is_little_endian = True
+        dicom_file.is_implicit_VR = False
 
         buffer = BytesIO()
         pydicom.dcmwrite(buffer, dicom_file)
@@ -66,6 +68,8 @@ class TestDicomParserService:
         dicom_file.BitsStored = 16
         dicom_file.HighBit = 15
         dicom_file.PixelRepresentation = 0
+        dicom_file.is_little_endian = True
+        dicom_file.is_implicit_VR = False
 
         buffer = BytesIO()
         pydicom.dcmwrite(buffer, dicom_file)
