@@ -185,6 +185,46 @@ class TestKheopsService:
         assert series_list[0].study_id == study_id
         assert series_list[0].modality == "CT"
 
+    @patch("backend.app.services.kheops_service.requests.request")
+    def test_fetch_instances_success(self, mock_request):
+        """Test successful fetch_instances call."""
+        # Arrange: Mock successful response
+        mock_response = Mock()
+        mock_response.json.return_value = [
+            {"00080018": {"Value": ["instance1"]}},
+            {"00080018": {"Value": ["instance2"]}},
+        ]
+        mock_response.raise_for_status = Mock()
+        mock_request.return_value = mock_response
+
+        service = KheopsService()
+        token = "test_token"
+        study_id = "study1"
+        series_id = "series1"
+
+        # Act: Fetch instances
+        instance_ids = service.fetch_instances(token, study_id, series_id)
+
+        # Assert: Verify instance IDs are parsed correctly
+        assert len(instance_ids) == 2
+        assert instance_ids[0] == "instance1"
+        assert instance_ids[1] == "instance2"
+
+    @patch("backend.app.services.kheops_service.requests.request")
+    def test_fetch_instances_api_error(self, mock_request):
+        """Test fetch_instances with API error."""
+        # Arrange: Mock API error
+        mock_request.side_effect = requests.exceptions.RequestException("API Error")
+
+        service = KheopsService()
+        token = "test_token"
+        study_id = "study1"
+        series_id = "series1"
+
+        # Act & Assert: Verify KheopsAPIError is raised
+        with pytest.raises(KheopsAPIError):
+            service.fetch_instances(token, study_id, series_id)
+
     @patch("backend.app.services.kheops_service.requests.get")
     def test_download_instance_success(self, mock_get):
         """Test successful download_instance call."""

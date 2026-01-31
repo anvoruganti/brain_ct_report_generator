@@ -103,6 +103,7 @@ class TestReportGenerator:
 
         series = Series(series_id="series1", study_id="study1")
         mock_kheops.fetch_series.return_value = [series]
+        mock_kheops.fetch_instances.return_value = ["instance1"]
         mock_kheops.download_instance.return_value = b"dicom_bytes"
 
         dicom_data = DicomData(study_id="study1")
@@ -136,12 +137,28 @@ class TestReportGenerator:
         # Assert: Verify result
         assert "report" in result
         mock_kheops.fetch_series.assert_called_once()
+        mock_kheops.fetch_instances.assert_called_once_with("token", "study1", "series1")
+        mock_kheops.download_instance.assert_called_once_with("token", "instance1")
 
     def test_generate_report_from_album_no_series(self):
         """Test report generation with no series found."""
         # Arrange: Mock empty series list
         mock_kheops = Mock(spec=KheopsService)
         mock_kheops.fetch_series.return_value = []
+
+        generator = ReportGenerator(kheops_client=mock_kheops)
+
+        # Act & Assert: Verify ReportGenerationError is raised
+        with pytest.raises(ReportGenerationError):
+            generator.generate_report_from_album("token", "study1")
+
+    def test_generate_report_from_album_no_instances(self):
+        """Test report generation with no instances found."""
+        # Arrange: Mock series with no instances
+        mock_kheops = Mock(spec=KheopsService)
+        series = Series(series_id="series1", study_id="study1")
+        mock_kheops.fetch_series.return_value = [series]
+        mock_kheops.fetch_instances.return_value = []
 
         generator = ReportGenerator(kheops_client=mock_kheops)
 

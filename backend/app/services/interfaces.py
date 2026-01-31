@@ -48,6 +48,24 @@ class IKheopsClient(ABC):
         pass
 
     @abstractmethod
+    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[str]:
+        """
+        Fetch all instance IDs within a series.
+
+        Args:
+            album_token: Token for album authentication
+            study_id: ID of the study
+            series_id: ID of the series
+
+        Returns:
+            List of instance IDs
+
+        Raises:
+            KheopsAPIError: If API request fails
+        """
+        pass
+
+    @abstractmethod
     def download_instance(self, album_token: str, instance_id: str) -> bytes:
         """
         Download a DICOM instance as bytes.

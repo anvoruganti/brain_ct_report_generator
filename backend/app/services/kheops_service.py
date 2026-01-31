@@ -203,6 +203,37 @@ class KheopsService(IKheopsClient):
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             raise KheopsAPIError(f"Failed to parse series response: {str(e)}") from e
 
+    def fetch_instances(self, album_token: str, study_id: str, series_id: str) -> List[str]:
+        """
+        Fetch all instance IDs within a series.
+
+        Args:
+            album_token: Token for album authentication
+            study_id: ID of the study
+            series_id: ID of the series
+
+        Returns:
+            List of instance IDs
+
+        Raises:
+            KheopsAPIError: If API request fails
+        """
+        url = f"{self.base_url}/api/studies/{study_id}/series/{series_id}/instances"
+        response = self._make_request("GET", url, album_token)
+
+        try:
+            instances_data = response.json()
+            instance_ids = []
+
+            for instance_item in instances_data:
+                instance_id = instance_item.get("00080018", {}).get("Value", [""])[0]
+                if instance_id:
+                    instance_ids.append(instance_id)
+
+            return instance_ids
+        except (json.JSONDecodeError, KeyError, IndexError) as e:
+            raise KheopsAPIError(f"Failed to parse instances response: {str(e)}") from e
+
     def download_instance(self, album_token: str, instance_id: str) -> bytes:
         """
         Download a DICOM instance as bytes.
