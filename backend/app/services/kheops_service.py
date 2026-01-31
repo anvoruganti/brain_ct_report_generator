@@ -65,6 +65,63 @@ class KheopsService(IKheopsClient):
         except requests.exceptions.RequestException as e:
             raise KheopsAPIError(f"Kheops API request failed: {str(e)}") from e
 
+    def _parse_dicom_value(self, value: any) -> str | None:
+        """
+        Parse DICOM value which can be a string, list, or dict.
+
+        Args:
+            value: DICOM value (can be string, list, or dict)
+
+        Returns:
+            String value or None
+        """
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            return value
+
+        if isinstance(value, list):
+            if len(value) > 0:
+                return self._parse_dicom_value(value[0])
+            return None
+
+        if isinstance(value, dict):
+            if "Alphabetic" in value:
+                return value["Alphabetic"]
+            if "Value" in value:
+                return self._parse_dicom_value(value["Value"])
+            return str(value)
+
+        return str(value) if value else None
+
+    def _parse_patient_name(self, name_value: any) -> str | None:
+        """
+        Parse DICOM patient name which can be string or dict with components.
+
+        Args:
+            name_value: Patient name value from DICOM
+
+        Returns:
+            Patient name as string or None
+        """
+        if name_value is None:
+            return None
+
+        if isinstance(name_value, str):
+            return name_value
+
+        if isinstance(name_value, list) and len(name_value) > 0:
+            name_value = name_value[0]
+
+        if isinstance(name_value, dict):
+            if "Alphabetic" in name_value:
+                return name_value["Alphabetic"]
+            if "Value" in name_value:
+                return self._parse_patient_name(name_value["Value"])
+
+        return str(name_value) if name_value else None
+
     def fetch_studies(self, album_token: str) -> List[Study]:
         """
         Fetch all studies from a Kheops album.
@@ -86,12 +143,18 @@ class KheopsService(IKheopsClient):
             studies = []
 
             for study_data in studies_data:
+                study_id_tag = study_data.get("0020000D", {})
+                study_date_tag = study_data.get("00080020", {})
+                study_desc_tag = study_data.get("00081030", {})
+                patient_id_tag = study_data.get("00100020", {})
+                patient_name_tag = study_data.get("00100010", {})
+
                 study = Study(
-                    study_id=study_data.get("0020000D", {}).get("Value", [""])[0],
-                    study_date=study_data.get("00080020", {}).get("Value", [""])[0] if study_data.get("00080020") else None,
-                    study_description=study_data.get("00081030", {}).get("Value", [""])[0] if study_data.get("00081030") else None,
-                    patient_id=study_data.get("00100020", {}).get("Value", [""])[0] if study_data.get("00100020") else None,
-                    patient_name=study_data.get("00100010", {}).get("Value", [""])[0] if study_data.get("00100010") else None,
+                    study_id=self._parse_dicom_value(study_id_tag.get("Value", [""])[0] if study_id_tag.get("Value") else ""),
+                    study_date=self._parse_dicom_value(study_date_tag.get("Value")[0] if study_date_tag.get("Value") else None),
+                    study_description=self._parse_dicom_value(study_desc_tag.get("Value")[0] if study_desc_tag.get("Value") else None),
+                    patient_id=self._parse_dicom_value(patient_id_tag.get("Value")[0] if patient_id_tag.get("Value") else None),
+                    patient_name=self._parse_patient_name(patient_name_tag.get("Value") if patient_name_tag.get("Value") else None),
                 )
                 studies.append(study)
 
