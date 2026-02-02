@@ -71,11 +71,15 @@ class MonaiService(IDiagnosisProvider):
         Returns:
             Preprocessed tensor
         """
-        # EnsureChannelFirst expects 2D or 3D array without channel dimension
-        # It will add the channel dimension itself
         # Convert to float32 for MONAI transforms
         if image.dtype != np.float32:
             image = image.astype(np.float32)
+        
+        # If image already has channel dimension (3D with single channel), remove it first
+        # EnsureChannelFirst expects 2D input and will add channel dimension
+        if len(image.shape) == 3 and image.shape[0] == 1:
+            # Remove the channel dimension if it's already there
+            image = image.squeeze(0)
         
         # EnsureChannelFirst will handle adding channel dimension
         preprocessed = self.preprocess_transform(image)
