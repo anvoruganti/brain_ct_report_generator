@@ -16,7 +16,11 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Kheops Configuration
+    # Kheops Configuration (Optional - Disabled for PoC)
+    enable_kheops: bool = Field(
+        default=False,
+        description="Enable Kheops integration (disabled for PoC, will be replaced with AWS HealthImaging for MVP)",
+    )
     kheops_base_url: str = Field(
         default="https://demo.kheops.online",
         description="Base URL for Kheops DICOMweb API",

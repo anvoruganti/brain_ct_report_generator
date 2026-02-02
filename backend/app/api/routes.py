@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 
 logger = logging.getLogger(__name__)
 
+from backend.app.config import get_settings
 from backend.app.dependencies import (
     get_kheops_service,
     get_report_generator,
@@ -40,6 +41,18 @@ async def get_studies(
     album_token: str,
     kheops_service: Any = Depends(get_kheops_service),  # type: ignore
 ) -> StudiesResponse:
+    """
+    Get all studies from a Kheops album.
+    
+    NOTE: Kheops integration is disabled for PoC. This endpoint is kept for future use.
+    For PoC, use /api/inference/from-dicom with local file upload.
+    """
+    settings = get_settings()
+    if not settings.enable_kheops:
+        raise HTTPException(
+            status_code=503,
+            detail="Kheops integration is disabled for PoC. Please use /api/inference/from-dicom with local file upload."
+        )
     """
     Get all studies from a Kheops album.
 
@@ -114,6 +127,9 @@ async def generate_report_from_kheops(
 ) -> ReportResponse:
     """
     Generate report from Kheops study.
+    
+    NOTE: Kheops integration is disabled for PoC. This endpoint is kept for future use.
+    For PoC, use /api/inference/from-dicom with local file upload.
 
     Args:
         request: Request with album token and study ID
@@ -125,6 +141,12 @@ async def generate_report_from_kheops(
     Raises:
         HTTPException: If report generation fails
     """
+    settings = get_settings()
+    if not settings.enable_kheops:
+        raise HTTPException(
+            status_code=503,
+            detail="Kheops integration is disabled for PoC. Please use /api/inference/from-dicom with local file upload."
+        )
     try:
         logger.info(f"Generating report for study {request.study_id}, series {request.series_id}")
         result = report_generator.generate_report_from_album(

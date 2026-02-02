@@ -2,15 +2,28 @@
 
 A FastAPI backend + Streamlit frontend application that generates clinical reports from Brain CT images using MONAI for abnormality detection and Llama LLM for report generation.
 
+## 🎯 Current Status: PoC Version
+
+**This PoC version focuses on local DICOM file upload:**
+- ✅ Upload DICOM files directly from your computer
+- ✅ Generate reports without external dependencies
+- ✅ Simple, fast workflow for testing and validation
+
+**Future MVP Plans:**
+- 🔄 AWS HealthImaging integration
+- 🔄 Cloud-based DICOM storage
+- 🔄 Scalable architecture redesign
+
 ## Features
 
-- **Kheops Integration**: Fetch DICOM images from Kheops.online using album tokens
+- **Local DICOM Upload**: Upload DICOM files directly from your computer (PoC)
 - **MONAI Inference**: Detect abnormalities in Brain CT scans using MONAI models
 - **LLM Report Generation**: Generate structured clinical reports using Ollama/Llama
-- **Streamlit UI**: User-friendly interface for study selection and report viewing
+- **Streamlit UI**: User-friendly interface for file upload and report viewing
 - **RESTful API**: FastAPI backend with comprehensive endpoints
 - **100% Test Coverage**: Comprehensive unit and integration tests
 - **SOLID Principles**: Clean architecture with dependency injection
+- **Kheops Integration**: Available but disabled for PoC (will be replaced with AWS HealthImaging for MVP)
 
 ## Architecture
 
@@ -26,7 +39,7 @@ A FastAPI backend + Streamlit frontend application that generates clinical repor
 
 - Python 3.9+
 - Ollama installed and running (for LLM)
-- Kheops album token (for accessing DICOM data)
+- DICOM files for testing (PoC version uses local file upload)
 
 ### Installation
 
@@ -67,6 +80,14 @@ A FastAPI backend + Streamlit frontend application that generates clinical repor
 5. Access the application
    - Frontend: http://localhost:8501
    - API Docs: http://localhost:8000/docs
+
+### Using the Application (PoC)
+
+1. Start the backend and frontend (see above)
+2. Open the Streamlit UI at http://localhost:8501
+3. Click "Choose a DICOM file" and select a Brain CT DICOM file from your computer
+4. Click "Generate Report"
+5. View the generated clinical report with diagnosis and recommendations
 
 ## Docker Deployment
 

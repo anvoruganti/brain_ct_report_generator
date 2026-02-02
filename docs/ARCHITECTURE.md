@@ -2,7 +2,16 @@
 
 ## System Overview
 
-The Brain CT Report Generator is a FastAPI backend + Streamlit frontend application that fetches Brain CT images from Kheops.online, uses MONAI for abnormality detection, and generates clinical reports using Llama LLM.
+The Brain CT Report Generator is a FastAPI backend + Streamlit frontend application that processes Brain CT images, uses MONAI for abnormality detection, and generates clinical reports using Llama LLM.
+
+**Current PoC Version:**
+- Local DICOM file upload (primary workflow)
+- Kheops integration available but disabled
+
+**Future MVP Plans:**
+- AWS HealthImaging integration
+- Cloud-based DICOM storage
+- Scalable architecture redesign
 
 ## Architecture Diagram
 
