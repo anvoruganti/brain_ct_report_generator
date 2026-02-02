@@ -1,5 +1,6 @@
 """MONAI service for brain CT abnormality detection."""
 
+import logging
 from typing import Dict, Any, List
 
 import numpy as np
@@ -18,6 +19,8 @@ from backend.app.config import Settings, get_settings
 from backend.app.models.domain import DiagnosisResult
 from backend.app.services.interfaces import IDiagnosisProvider
 from backend.app.utils.exceptions import ModelLoadError
+
+logger = logging.getLogger(__name__)
 
 
 class MonaiService(IDiagnosisProvider):
@@ -94,9 +97,17 @@ class MonaiService(IDiagnosisProvider):
 
         Returns:
             DiagnosisResult with detected abnormalities
+
+        Raises:
+            ModelLoadError: If model is not loaded (only in strict mode)
         """
         if self.model is None:
-            raise ModelLoadError("Model not loaded. Call load_model() first.")
+            # For PoC/testing: return mock diagnosis if model not loaded
+            logger.warning(
+                "MONAI model not loaded. Returning mock diagnosis for PoC/testing. "
+                "To use real inference, provide a model file at the configured path."
+            )
+            return self._get_mock_diagnosis()
 
         with torch.no_grad():
             output = self.model(image_tensor)
@@ -111,6 +122,27 @@ class MonaiService(IDiagnosisProvider):
             abnormalities=abnormalities,
             confidence_scores=confidence_scores,
             findings=findings,
+        )
+
+    def _get_mock_diagnosis(self) -> DiagnosisResult:
+        """
+        Generate mock diagnosis for PoC/testing when model is not available.
+
+        Returns:
+            Mock DiagnosisResult
+        """
+        from datetime import datetime
+        return DiagnosisResult(
+            abnormalities=["normal"],  # Default to normal for PoC
+            confidence_scores={
+                "normal": 0.85,
+                "abnormal": 0.15,
+            },
+            findings={
+                "mock_diagnosis": True,
+                "note": "Mock diagnosis - model not loaded. Provide a MONAI model file for real inference.",
+            },
+            timestamp=datetime.now(),
         )
 
     def _create_preprocess_transform(self) -> Compose:

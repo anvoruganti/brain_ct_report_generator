@@ -313,16 +313,26 @@ class KheopsService(IKheopsClient):
                             if response.content[:4] == b"DICM":
                                 return response.content
                         
-                        # Fallback: accept if content type suggests DICOM and it's binary
-                        # But only if it's large enough and not JSON/HTML
+                        # For large files (>10KB), REQUIRE DICM signature - don't trust content-type alone
+                        # Kheops may return metadata with misleading content-types
+                        if content_length > 10000:
+                            # Large files without DICM signature are likely not valid DICOM
+                            # Skip this URL pattern and try the next one
+                            continue
+                        
+                        # For smaller files (1KB-10KB), be more lenient but still validate
                         if (
-                            content_length > 10000 and  # DICOM files are usually > 10KB
                             ("application/dicom" in content_type or 
                              "application/octet-stream" in content_type) and
                             "json" not in content_type and 
                             "html" not in content_type
                         ):
-                            return response.content
+                            # Only accept if it looks like binary data (not text/metadata)
+                            # Check if first 100 bytes contain mostly non-printable characters
+                            check_bytes = min(100, len(response.content))
+                            non_printable = sum(1 for b in response.content[:check_bytes] if b < 32 or b > 126)
+                            if non_printable > (check_bytes * 0.5):  # More than 50% non-printable = likely binary
+                                return response.content
                     
                     # If it's JSON, this is metadata, not the file
                     if "application/json" in content_type or "application/dicom+json" in content_type:
@@ -332,7 +342,21 @@ class KheopsService(IKheopsClient):
                     last_error = e
                     continue
 
-        # If all URLs failed, raise error with details
+        # If all URLs failed, check what we actually received (if we got any response)
+        # This helps diagnose if Kheops is returning JSON metadata instead of binary files
+        diagnostic_info = ""
+        if last_error and hasattr(last_error, 'response') and last_error.response is not None:
+            try:
+                content_preview = last_error.response.content[:200]
+                if content_preview.startswith(b"{") or content_preview.startswith(b"["):
+                    diagnostic_info = (
+                        "\n\nDIAGNOSIS: Kheops API is returning JSON metadata instead of binary DICOM files. "
+                        "This suggests the demo instance may not support direct file downloads via DICOMweb API. "
+                        "SOLUTION: Use the /api/inference/from-dicom endpoint with manually downloaded DICOM files."
+                    )
+            except Exception:
+                pass
+        
         error_details = "\n".join(f"  - {url}" for url in attempted_urls[:10])  # Show first 10
         if len(attempted_urls) > 10:
             error_details += f"\n  ... and {len(attempted_urls) - 10} more attempts"
@@ -340,7 +364,8 @@ class KheopsService(IKheopsClient):
         raise KheopsAPIError(
             f"Failed to download DICOM instance {instance_id} after trying {len(attempted_urls)} URL/header combinations.\n"
             f"Attempted URLs:\n{error_details}\n"
-            f"Last error: {str(last_error) if last_error else 'Unknown error'}\n"
-            f"Note: Kheops demo instance may not support direct file downloads. "
-            f"Consider using the view URL or checking Kheops documentation for alternative download methods."
+            f"Last error: {str(last_error) if last_error else 'Unknown error'}"
+            f"{diagnostic_info}\n"
+            f"\nNote: Kheops demo instance may not support direct file downloads. "
+            f"Consider using the /api/inference/from-dicom endpoint with manually downloaded files."
         )
