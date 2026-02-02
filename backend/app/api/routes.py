@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -189,14 +190,17 @@ async def generate_report_from_kheops(
 
 @router.post("/inference/from-dicom", response_model=ReportResponse)
 async def generate_report_from_dicom(
-    dicom_file: UploadFile = File(...),
+    dicom_files: List[UploadFile] = File(...),
     report_generator: Any = Depends(get_report_generator),  # type: ignore
 ) -> ReportResponse:
     """
-    Generate report from uploaded DICOM file.
+    Generate report from uploaded DICOM file(s).
+    
+    Supports both single file and multiple files (series).
+    When multiple files are uploaded, generates an aggregated report.
 
     Args:
-        dicom_file: Uploaded DICOM file
+        dicom_files: Uploaded DICOM file(s) - can be single file or multiple files
         report_generator: Report generator (injected)
 
     Returns:
@@ -206,8 +210,24 @@ async def generate_report_from_dicom(
         HTTPException: If report generation fails
     """
     try:
-        dicom_bytes = await dicom_file.read()
-        result = report_generator.generate_report_from_dicom(dicom_bytes)
+        if not dicom_files:
+            raise HTTPException(status_code=400, detail="No DICOM files provided")
+        
+        logger.info(f"Processing {len(dicom_files)} DICOM file(s)")
+        
+        # Read all uploaded files
+        dicom_bytes_list = []
+        for dicom_file in dicom_files:
+            dicom_bytes = await dicom_file.read()
+            dicom_bytes_list.append(dicom_bytes)
+
+        # Process single file or series
+        if len(dicom_bytes_list) == 1:
+            logger.info("Processing single DICOM file")
+            result = report_generator.generate_report_from_dicom(dicom_bytes_list[0])
+        else:
+            logger.info(f"Processing DICOM series with {len(dicom_bytes_list)} images")
+            result = report_generator.generate_report_from_dicom_series(dicom_bytes_list)
 
         from backend.app.models.schemas import ClinicalReportResponse, DiagnosisResponse
 
@@ -228,4 +248,5 @@ async def generate_report_from_dicom(
             dicom_metadata=result["dicom_metadata"],
         )
     except Exception as e:
+        logger.exception(f"Error generating report: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate report: {str(e)}")

@@ -117,11 +117,37 @@ class APIClient:
         Raises:
             requests.exceptions.RequestException: If request fails
         """
-        files = {"dicom_file": (filename, dicom_file, "application/dicom")}
+        files = [("dicom_files", (filename, dicom_file, "application/dicom"))]
         response = requests.post(
             f"{self.base_url}/api/inference/from-dicom",
             files=files,
-            timeout=120,
+            timeout=300,  # Increased timeout for multiple files
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def generate_report_from_dicom_series(self, dicom_files: List[bytes], filenames: List[str]) -> Dict:
+        """
+        Generate report from multiple uploaded DICOM files (series).
+
+        Args:
+            dicom_files: List of DICOM file bytes
+            filenames: List of filenames for upload
+
+        Returns:
+            Report dictionary
+
+        Raises:
+            requests.exceptions.RequestException: If request fails
+        """
+        files = [
+            ("dicom_files", (filename, dicom_bytes, "application/dicom"))
+            for dicom_bytes, filename in zip(dicom_files, filenames)
+        ]
+        response = requests.post(
+            f"{self.base_url}/api/inference/from-dicom",
+            files=files,
+            timeout=600,  # Longer timeout for multiple files
         )
         response.raise_for_status()
         return response.json()

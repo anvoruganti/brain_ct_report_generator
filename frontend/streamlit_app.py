@@ -24,17 +24,31 @@ except Exception as e:
     st.sidebar.info("Make sure the FastAPI backend is running on http://localhost:8000")
     st.stop()
 
-st.header("Upload DICOM File")
+st.header("Upload DICOM Series")
 
-# Allow multiple file types
-uploaded_file = st.file_uploader(
-    "Choose a DICOM file", 
+st.info("📁 Upload one or multiple DICOM files from a series. The system will analyze all images and generate a comprehensive report.")
+
+# Allow multiple file upload
+uploaded_files = st.file_uploader(
+    "Choose DICOM file(s)", 
     type=["dcm", "dicom"],
-    help="Select a Brain CT DICOM file from your computer"
+    accept_multiple_files=True,
+    help="Select one or multiple Brain CT DICOM files from your computer (e.g., a complete series)"
 )
 
-if uploaded_file:
-    st.info(f"📄 Selected: {uploaded_file.name} ({uploaded_file.size / 1024:.2f} KB)")
+if uploaded_files:
+    total_size = sum(f.size for f in uploaded_files)
+    st.info(
+        f"📄 Selected {len(uploaded_files)} file(s): "
+        f"{', '.join([f.name for f in uploaded_files[:3]])}"
+        f"{' ...' if len(uploaded_files) > 3 else ''} "
+        f"({total_size / 1024 / 1024:.2f} MB total)"
+    )
+    
+    # Show file list
+    with st.expander("📋 View Selected Files", expanded=False):
+        for idx, file in enumerate(uploaded_files, 1):
+            st.write(f"{idx}. {file.name} ({file.size / 1024:.2f} KB)")
     
     col1, col2 = st.columns([1, 4])
     with col1:
@@ -42,11 +56,37 @@ if uploaded_file:
     
     if generate_button:
         try:
-            with st.spinner("🔄 Processing DICOM file and generating report... This may take a few minutes."):
-                dicom_bytes = uploaded_file.read()
-                result = api_client.generate_report_from_dicom(dicom_bytes, uploaded_file.name)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            with st.spinner("🔄 Processing DICOM series and generating report... This may take a few minutes."):
+                status_text.text(f"📤 Uploading {len(uploaded_files)} file(s)...")
+                progress_bar.progress(0.1)
+                
+                # Read all files
+                dicom_files_data = []
+                for idx, uploaded_file in enumerate(uploaded_files):
+                    dicom_bytes = uploaded_file.read()
+                    dicom_files_data.append((dicom_bytes, uploaded_file.name))
+                    progress_bar.progress(0.1 + (idx + 1) / len(uploaded_files) * 0.3)
+                
+                status_text.text(f"🔍 Analyzing {len(uploaded_files)} image(s) with MONAI model...")
+                progress_bar.progress(0.4)
+                
+                # Generate report (API handles single vs multiple files)
+                result = api_client.generate_report_from_dicom_series(
+                    [data[0] for data in dicom_files_data],
+                    [data[1] for data in dicom_files_data]
+                )
+                
+                progress_bar.progress(0.9)
+                status_text.text("📝 Generating clinical report with LLM...")
+                
                 st.session_state["report_result"] = result
-                st.success("✅ Report generated successfully!")
+                progress_bar.progress(1.0)
+                status_text.text("✅ Report generated successfully!")
+                
+                st.success(f"✅ Successfully processed {len(uploaded_files)} image(s) and generated report!")
                 display_report(result)
         except Exception as e:
             st.error(f"❌ Error generating report: {str(e)}")
@@ -80,6 +120,13 @@ def display_report(result: dict):
                     st.write(f"**Study ID:** {metadata['study_id']}")
                 if metadata.get("series_id"):
                     st.write(f"**Series ID:** {metadata['series_id']}")
+            
+            # Show series processing info
+            if metadata.get("total_images_processed"):
+                st.divider()
+                st.write(f"**Total Images Processed:** {metadata['total_images_processed']}")
+                if metadata.get("total_images_uploaded"):
+                    st.write(f"**Total Images Uploaded:** {metadata['total_images_uploaded']}")
 
     col1, col2 = st.columns(2)
 

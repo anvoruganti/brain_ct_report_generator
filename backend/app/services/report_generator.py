@@ -1,6 +1,7 @@
 """Report generator service that orchestrates the end-to-end workflow."""
 
-from typing import Dict, Any
+from typing import Dict, Any, List
+from collections import defaultdict
 
 from backend.app.models.domain import ClinicalReport, DiagnosisResult
 from backend.app.services.dicom_parser import DicomParserService
@@ -98,6 +99,132 @@ class ReportGenerator:
             return self._process_dicom_to_report(dicom_bytes)
         except Exception as e:
             raise ReportGenerationError(f"Failed to generate report from DICOM: {str(e)}") from e
+
+    def generate_report_from_dicom_series(self, dicom_files: List[bytes]) -> Dict[str, Any]:
+        """
+        Generate aggregated report from multiple DICOM files (series).
+
+        Args:
+            dicom_files: List of raw DICOM file bytes
+
+        Returns:
+            Dictionary with aggregated report and metadata
+
+        Raises:
+            ReportGenerationError: If generation fails
+        """
+        if not dicom_files:
+            raise ReportGenerationError("No DICOM files provided")
+
+        try:
+            # Process all DICOM files and collect diagnoses
+            diagnoses = []
+            all_metadata = []
+            
+            for idx, dicom_bytes in enumerate(dicom_files):
+                try:
+                    dicom_data = self.dicom_parser.parse_dicom_file(dicom_bytes)
+                    pixel_array = self.dicom_parser.extract_pixel_array(dicom_data)
+                    normalized_image = self.dicom_parser.normalize_image(pixel_array)
+
+                    image_tensor = self.diagnosis_provider.preprocess_image(normalized_image)
+                    diagnosis = self.diagnosis_provider.run_inference(image_tensor)
+                    diagnoses.append(diagnosis)
+                    all_metadata.append({
+                        "study_id": dicom_data.study_id,
+                        "series_id": dicom_data.series_id,
+                        "instance_id": dicom_data.instance_id,
+                        "patient_id": dicom_data.patient_id,
+                        "patient_name": dicom_data.patient_name,
+                        "image_index": idx + 1,
+                    })
+                except Exception as e:
+                    # Log error but continue with other images
+                    continue
+
+            if not diagnoses:
+                raise ReportGenerationError("Failed to process any DICOM files")
+
+            # Aggregate diagnoses
+            aggregated_diagnosis = self._aggregate_diagnoses(diagnoses)
+
+            # Generate report from aggregated diagnosis
+            prompt = self.report_generator.create_prompt(aggregated_diagnosis)
+            raw_report = self.report_generator.generate_report(prompt)
+            clinical_report = self.report_generator.format_report(raw_report)
+
+            # Use metadata from first successfully processed file
+            primary_metadata = all_metadata[0] if all_metadata else {}
+
+            return {
+                "report": clinical_report,
+                "diagnosis": aggregated_diagnosis,
+                "dicom_metadata": {
+                    "study_id": primary_metadata.get("study_id"),
+                    "series_id": primary_metadata.get("series_id"),
+                    "patient_id": primary_metadata.get("patient_id"),
+                    "patient_name": primary_metadata.get("patient_name"),
+                    "total_images_processed": len(diagnoses),
+                    "total_images_uploaded": len(dicom_files),
+                },
+                "image_metadata": all_metadata,
+            }
+        except Exception as e:
+            raise ReportGenerationError(f"Failed to generate report from DICOM series: {str(e)}") from e
+
+    def _aggregate_diagnoses(self, diagnoses: List[DiagnosisResult]) -> DiagnosisResult:
+        """
+        Aggregate multiple diagnosis results into a single comprehensive diagnosis.
+
+        Args:
+            diagnoses: List of diagnosis results from multiple images
+
+        Returns:
+            Aggregated DiagnosisResult
+        """
+        from datetime import datetime
+        from collections import Counter
+
+        # Aggregate abnormalities (union of all abnormalities)
+        all_abnormalities = []
+        for diagnosis in diagnoses:
+            all_abnormalities.extend(diagnosis.abnormalities)
+        
+        # Count occurrences and keep unique abnormalities
+        abnormality_counts = Counter(all_abnormalities)
+        unique_abnormalities = list(abnormality_counts.keys())
+
+        # Aggregate confidence scores (average across all images)
+        aggregated_confidence = defaultdict(float)
+        for diagnosis in diagnoses:
+            for key, value in diagnosis.confidence_scores.items():
+                aggregated_confidence[key] += value
+        
+        # Average the confidence scores
+        num_images = len(diagnoses)
+        for key in aggregated_confidence:
+            aggregated_confidence[key] /= num_images
+
+        # Aggregate findings (combine all findings)
+        aggregated_findings = {
+            "total_images_analyzed": num_images,
+            "abnormality_frequency": dict(abnormality_counts),
+            "per_image_findings": [
+                {
+                    "abnormalities": diag.abnormalities,
+                    "confidence_scores": diag.confidence_scores,
+                    "findings": diag.findings,
+                }
+                for diag in diagnoses
+            ],
+        }
+
+        return DiagnosisResult(
+            abnormalities=unique_abnormalities,
+            confidence_scores=dict(aggregated_confidence),
+            findings=aggregated_findings,
+            timestamp=datetime.now(),
+        )
 
     def _process_dicom_to_report(self, dicom_bytes: bytes) -> Dict[str, Any]:
         """
