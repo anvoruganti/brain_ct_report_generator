@@ -28,26 +28,59 @@ st.header("Upload DICOM Series")
 
 st.info("📁 Upload one or multiple DICOM files from a series. The system will analyze all images and generate a comprehensive report.")
 
-# Allow multiple file upload
+# Instructions for Kheops downloads
+with st.expander("ℹ️ Instructions for Kheops Downloads", expanded=False):
+    st.markdown("""
+    **If you downloaded DICOM files from Kheops:**
+    - Files may not have `.dcm` or `.dicom` extensions
+    - Files are typically named with numbers (1, 10, 100, etc.)
+    - **To upload:** Use your file browser's "Select All" (Cmd+A / Ctrl+A) in the folder, then drag and drop all files
+    - Or manually select multiple files by holding Ctrl (Windows/Linux) or Cmd (Mac)
+    """)
+
+# Allow multiple file upload - accept all file types since DICOM files may not have extensions
 uploaded_files = st.file_uploader(
-    "Choose DICOM file(s)", 
-    type=["dcm", "dicom"],
+    "Choose DICOM file(s) - Files without extensions are supported", 
+    type=None,  # Accept all files - we'll validate DICOM format server-side
     accept_multiple_files=True,
-    help="Select one or multiple Brain CT DICOM files from your computer (e.g., a complete series)"
+    help="Select one or multiple Brain CT DICOM files. Files without extensions (like from Kheops) are supported. Use Ctrl/Cmd+Click to select multiple files."
 )
 
 if uploaded_files:
-    total_size = sum(f.size for f in uploaded_files)
+    # Filter out non-DICOM files by checking file size and name patterns
+    # DICOM files are typically > 10KB and may not have extensions
+    valid_files = []
+    for file in uploaded_files:
+        # Accept files that are:
+        # 1. Have .dcm or .dicom extension, OR
+        # 2. Are > 10KB (likely DICOM if no extension), OR
+        # 3. Have no extension (common for Kheops downloads)
+        file_ext = file.name.lower().split('.')[-1] if '.' in file.name else ''
+        is_likely_dicom = (
+            file_ext in ['dcm', 'dicom'] or
+            file.size > 10000 or  # DICOM files are usually > 10KB
+            '.' not in file.name  # No extension (Kheops format)
+        )
+        if is_likely_dicom:
+            valid_files.append(file)
+        else:
+            st.warning(f"⚠️ Skipped {file.name} - doesn't appear to be a DICOM file")
+    
+    if not valid_files:
+        st.error("❌ No valid DICOM files found. Please select DICOM files.")
+        st.stop()
+    
+    total_size = sum(f.size for f in valid_files)
     st.info(
-        f"📄 Selected {len(uploaded_files)} file(s): "
-        f"{', '.join([f.name for f in uploaded_files[:3]])}"
-        f"{' ...' if len(uploaded_files) > 3 else ''} "
+        f"📄 Selected {len(valid_files)} DICOM file(s): "
+        f"{', '.join([f.name for f in valid_files[:3]])}"
+        f"{' ...' if len(valid_files) > 3 else ''} "
         f"({total_size / 1024 / 1024:.2f} MB total)"
     )
     
     # Show file list
     with st.expander("📋 View Selected Files", expanded=False):
-        for idx, file in enumerate(uploaded_files, 1):
+        for idx, file in enumerate(valid_files, 1):
             st.write(f"{idx}. {file.name} ({file.size / 1024:.2f} KB)")
     
     col1, col2 = st.columns([1, 4])
@@ -60,17 +93,19 @@ if uploaded_files:
             status_text = st.empty()
             
             with st.spinner("🔄 Processing DICOM series and generating report... This may take a few minutes."):
-                status_text.text(f"📤 Uploading {len(uploaded_files)} file(s)...")
+                status_text.text(f"📤 Uploading {len(valid_files)} file(s)...")
                 progress_bar.progress(0.1)
                 
                 # Read all files
                 dicom_files_data = []
-                for idx, uploaded_file in enumerate(uploaded_files):
+                for idx, uploaded_file in enumerate(valid_files):
                     dicom_bytes = uploaded_file.read()
-                    dicom_files_data.append((dicom_bytes, uploaded_file.name))
-                    progress_bar.progress(0.1 + (idx + 1) / len(uploaded_files) * 0.3)
+                    # Ensure filename has .dcm extension for API compatibility
+                    filename = uploaded_file.name if uploaded_file.name.endswith(('.dcm', '.dicom')) else f"{uploaded_file.name}.dcm"
+                    dicom_files_data.append((dicom_bytes, filename))
+                    progress_bar.progress(0.1 + (idx + 1) / len(valid_files) * 0.3)
                 
-                status_text.text(f"🔍 Analyzing {len(uploaded_files)} image(s) with MONAI model...")
+                status_text.text(f"🔍 Analyzing {len(valid_files)} image(s) with MONAI model...")
                 progress_bar.progress(0.4)
                 
                 # Generate report (API handles single vs multiple files)
