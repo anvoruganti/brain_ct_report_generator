@@ -91,6 +91,9 @@ async def get_series(
 ) -> SeriesListResponse:
     """
     Get all series within a study.
+    
+    NOTE: Kheops integration is disabled for PoC. This endpoint is kept for future use.
+    For PoC, use /api/inference/from-dicom with local file upload.
 
     Args:
         study_id: Study instance UID
@@ -103,6 +106,12 @@ async def get_series(
     Raises:
         HTTPException: If API request fails
     """
+    settings = get_settings()
+    if not settings.enable_kheops:
+        raise HTTPException(
+            status_code=503,
+            detail="Kheops integration is disabled for PoC. Please use /api/inference/from-dicom with local file upload."
+        )
     try:
         series_list = kheops_service.fetch_series(album_token, study_id)
         series_responses = [
