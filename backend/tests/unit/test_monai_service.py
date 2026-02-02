@@ -88,8 +88,10 @@ class TestMonaiService:
         assert tensor.shape[1] == 1
 
     def test_preprocess_image_3d(self):
-        """Test preprocessing 3D image."""
-        # Arrange: Create 3D image
+        """Test preprocessing 3D image (already has channel dimension)."""
+        # Arrange: Create 3D image (already has channel dimension)
+        # Note: EnsureChannelFirst expects 2D input, so 3D input with channel
+        # will be handled differently - it will add another channel dimension
         image = np.random.rand(1, 512, 512).astype(np.float32)
         service = MonaiService()
 
@@ -97,6 +99,7 @@ class TestMonaiService:
         tensor = service.preprocess_image(image)
 
         # Assert: Verify tensor shape
+        # After EnsureChannelFirst, it will be (1, 1, 512, 512) -> (1, 1, 256, 256) after resize
         assert isinstance(tensor, torch.Tensor)
         assert tensor.dim() == 4
         assert tensor.shape[1] == 1

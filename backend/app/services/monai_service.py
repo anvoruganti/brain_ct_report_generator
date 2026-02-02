@@ -66,14 +66,18 @@ class MonaiService(IDiagnosisProvider):
         Preprocess image for model inference.
 
         Args:
-            image: Image array
+            image: Image array (2D or 3D)
 
         Returns:
             Preprocessed tensor
         """
-        if len(image.shape) == 2:
-            image = np.expand_dims(image, axis=0)
-
+        # EnsureChannelFirst expects 2D or 3D array without channel dimension
+        # It will add the channel dimension itself
+        # Convert to float32 for MONAI transforms
+        if image.dtype != np.float32:
+            image = image.astype(np.float32)
+        
+        # EnsureChannelFirst will handle adding channel dimension
         preprocessed = self.preprocess_transform(image)
         return preprocessed.unsqueeze(0).to(self.device)
 
@@ -113,7 +117,7 @@ class MonaiService(IDiagnosisProvider):
             Composed transform
         """
         return Compose([
-            EnsureChannelFirst(),
+            EnsureChannelFirst(channel_dim="no_channel"),  # Explicitly specify no channel dimension exists
             Resize(spatial_size=(256, 256)),
             NormalizeIntensity(),
             ToTensor(),
