@@ -1,19 +1,35 @@
 """MONAI service for brain CT abnormality detection."""
 
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Union
 
 import numpy as np
-import torch
-from monai.networks.nets import UNet
-from monai.transforms import (
-    Compose,
-    EnsureChannelFirst,
-    Resize,
-    NormalizeIntensity,
-    ToTensor,
-    Transform,
-)
+
+# Optional imports for MONAI - gracefully handle if not available (e.g., Python 3.13)
+try:
+    import torch
+    from monai.networks.nets import UNet
+    from monai.transforms import (
+        Compose,
+        EnsureChannelFirst,
+        Resize,
+        NormalizeIntensity,
+        ToTensor,
+        Transform,
+    )
+    MONAI_AVAILABLE = True
+    TensorType = torch.Tensor
+except ImportError:
+    MONAI_AVAILABLE = False
+    torch = None
+    UNet = None
+    Compose = None
+    EnsureChannelFirst = None
+    Resize = None
+    NormalizeIntensity = None
+    ToTensor = None
+    Transform = None
+    TensorType = Any  # Fallback type hint when torch is not available
 
 from backend.app.config import Settings, get_settings
 from backend.app.models.domain import DiagnosisResult
@@ -35,8 +51,45 @@ class MonaiService(IDiagnosisProvider):
         """
         self.settings = settings or get_settings()
         self.model = None
-        self.device = torch.device(self.settings.monai_device if torch.cuda.is_available() else "cpu")
-        self.preprocess_transform = self._create_preprocess_transform()
+        
+        if not MONAI_AVAILABLE:
+            logger.warning(
+                "MONAI/PyTorch not available (likely Python 3.13 compatibility issue). "
+                "Using mock diagnosis mode for PoC."
+            )
+            self.device = None
+            self.preprocess_transform = None
+        else:
+            # Auto-detect best device: MPS (M1 Mac) > CUDA > CPU
+            device_setting = self.settings.monai_device.lower()
+            if device_setting == "auto":
+                if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    self.device = torch.device("mps")
+                    logger.info("✅ Using MPS (Metal) backend for M1 Mac acceleration")
+                elif torch.cuda.is_available():
+                    self.device = torch.device("cuda")
+                    logger.info("✅ Using CUDA backend")
+                else:
+                    self.device = torch.device("cpu")
+                    logger.info("Using CPU backend")
+            elif device_setting == "mps":
+                if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    self.device = torch.device("mps")
+                    logger.info("✅ Using MPS (Metal) backend")
+                else:
+                    logger.warning("MPS requested but not available, falling back to CPU")
+                    self.device = torch.device("cpu")
+            elif device_setting == "cuda":
+                if torch.cuda.is_available():
+                    self.device = torch.device("cuda")
+                    logger.info("✅ Using CUDA backend")
+                else:
+                    logger.warning("CUDA requested but not available, falling back to CPU")
+                    self.device = torch.device("cpu")
+            else:
+                self.device = torch.device("cpu")
+                logger.info("Using CPU backend")
+            self.preprocess_transform = self._create_preprocess_transform()
 
     def load_model(self, model_path: str) -> None:
         """
@@ -46,8 +99,14 @@ class MonaiService(IDiagnosisProvider):
             model_path: Path to model file
 
         Raises:
-            ModelLoadError: If model loading fails
+            ModelLoadError: If model loading fails or MONAI is not available
         """
+        if not MONAI_AVAILABLE:
+            raise ModelLoadError(
+                "MONAI/PyTorch not available. Cannot load model. "
+                "For Python 3.13, use Python 3.10-3.12 or wait for PyTorch 3.13 support."
+            )
+        
         try:
             model = UNet(
                 spatial_dims=2,
@@ -64,7 +123,7 @@ class MonaiService(IDiagnosisProvider):
         except Exception as e:
             raise ModelLoadError(f"Failed to load MONAI model: {str(e)}") from e
 
-    def preprocess_image(self, image: np.ndarray) -> torch.Tensor:
+    def preprocess_image(self, image: np.ndarray):
         """
         Preprocess image for model inference.
 
@@ -72,8 +131,11 @@ class MonaiService(IDiagnosisProvider):
             image: Image array (2D or 3D)
 
         Returns:
-            Preprocessed tensor
+            Preprocessed tensor (or None if MONAI not available)
         """
+        if not MONAI_AVAILABLE or self.preprocess_transform is None:
+            return None
+        
         # Convert to float32 for MONAI transforms
         if image.dtype != np.float32:
             image = image.astype(np.float32)
@@ -88,12 +150,12 @@ class MonaiService(IDiagnosisProvider):
         preprocessed = self.preprocess_transform(image)
         return preprocessed.unsqueeze(0).to(self.device)
 
-    def run_inference(self, image_tensor: torch.Tensor) -> DiagnosisResult:
+    def run_inference(self, image_tensor: Optional[TensorType] = None) -> DiagnosisResult:
         """
         Run inference on preprocessed image.
 
         Args:
-            image_tensor: Preprocessed image tensor
+            image_tensor: Preprocessed image tensor (or None if MONAI not available)
 
         Returns:
             DiagnosisResult with detected abnormalities
@@ -101,11 +163,11 @@ class MonaiService(IDiagnosisProvider):
         Raises:
             ModelLoadError: If model is not loaded (only in strict mode)
         """
-        if self.model is None:
-            # For PoC/testing: return mock diagnosis if model not loaded
+        if not MONAI_AVAILABLE or self.model is None or image_tensor is None:
+            # For PoC/testing: return mock diagnosis if model not loaded or MONAI unavailable
             logger.warning(
-                "MONAI model not loaded. Returning mock diagnosis for PoC/testing. "
-                "To use real inference, provide a model file at the configured path."
+                "MONAI model not available or not loaded. Returning mock diagnosis for PoC/testing. "
+                "To use real inference, provide a model file and ensure MONAI/PyTorch is installed."
             )
             return self._get_mock_diagnosis()
 
@@ -123,6 +185,58 @@ class MonaiService(IDiagnosisProvider):
             confidence_scores=confidence_scores,
             findings=findings,
         )
+    
+    def run_inference_batch(self, image_tensors: List[TensorType]) -> List[DiagnosisResult]:
+        """
+        Run inference on a batch of images (much faster than individual calls).
+        
+        This method processes multiple images in a single forward pass, which is
+        significantly faster than calling run_inference() multiple times, especially
+        on MPS/CUDA devices.
+
+        Args:
+            image_tensors: List of preprocessed image tensors
+
+        Returns:
+            List of DiagnosisResult objects (one per image)
+
+        Raises:
+            ModelLoadError: If model is not loaded
+        """
+        if not MONAI_AVAILABLE or self.model is None:
+            return [self._get_mock_diagnosis() for _ in image_tensors]
+        
+        if not image_tensors:
+            return []
+        
+        # Stack tensors into batch [batch_size, channels, height, width]
+        batch = torch.stack(image_tensors).to(self.device)
+        
+        with torch.no_grad():
+            output = self.model(batch)
+            probabilities = torch.softmax(output, dim=1)
+            predicted_classes = torch.argmax(probabilities, dim=1)
+        
+        # Process each image in batch
+        results = []
+        for i in range(len(image_tensors)):
+            # Extract single image results from batch
+            # predicted_classes shape: [batch, H, W], slice to [1, H, W]
+            single_predicted = predicted_classes[i:i+1]
+            # probabilities shape: [batch, 2, H, W], slice to [1, 2, H, W]
+            single_probabilities = probabilities[i:i+1]
+            
+            abnormalities = self._extract_abnormalities(single_predicted, single_probabilities)
+            confidence_scores = self._calculate_confidence_scores(single_probabilities)
+            findings = self._extract_findings(output[i:i+1], single_probabilities)
+            
+            results.append(DiagnosisResult(
+                abnormalities=abnormalities,
+                confidence_scores=confidence_scores,
+                findings=findings,
+            ))
+        
+        return results
 
     def _get_mock_diagnosis(self) -> DiagnosisResult:
         """
@@ -145,13 +259,16 @@ class MonaiService(IDiagnosisProvider):
             timestamp=datetime.now(),
         )
 
-    def _create_preprocess_transform(self) -> Compose:
+    def _create_preprocess_transform(self):
         """
         Create preprocessing transform pipeline.
 
         Returns:
-            Composed transform
+            Composed transform (or None if MONAI not available)
         """
+        if not MONAI_AVAILABLE:
+            return None
+        
         return Compose([
             EnsureChannelFirst(channel_dim="no_channel"),  # Explicitly specify no channel dimension exists
             Resize(spatial_size=(256, 256)),
@@ -159,7 +276,7 @@ class MonaiService(IDiagnosisProvider):
             ToTensor(),
         ])
 
-    def _extract_abnormalities(self, predicted_class: torch.Tensor, probabilities: torch.Tensor) -> List[str]:
+    def _extract_abnormalities(self, predicted_class: TensorType, probabilities: TensorType) -> List[str]:
         """
         Extract detected abnormalities from model output.
 
@@ -182,7 +299,7 @@ class MonaiService(IDiagnosisProvider):
 
         return abnormalities if abnormalities else ["normal"]
 
-    def _calculate_confidence_scores(self, probabilities: torch.Tensor) -> Dict[str, float]:
+    def _calculate_confidence_scores(self, probabilities: TensorType) -> Dict[str, float]:
         """
         Calculate confidence scores for each class.
 
@@ -197,7 +314,7 @@ class MonaiService(IDiagnosisProvider):
             "abnormal": torch.mean(probabilities[0, 1]).item(),
         }
 
-    def _extract_findings(self, output: torch.Tensor, probabilities: torch.Tensor) -> Dict[str, Any]:
+    def _extract_findings(self, output: TensorType, probabilities: TensorType) -> Dict[str, Any]:
         """
         Extract detailed findings from model output.
 

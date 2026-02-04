@@ -13,6 +13,89 @@ st.set_page_config(
 st.title("🧠 Brain CT Report Generator")
 st.markdown("**PoC Version** - Upload DICOM files from your computer to generate clinical reports")
 
+
+def display_report(result: dict):
+    """Display the generated report."""
+    st.success("Report generated successfully")
+
+    with st.expander("Raw API Response", expanded=False):
+        st.json(result)
+
+    report = result.get("report", {})
+    diagnosis = result.get("diagnosis", {})
+    metadata = result.get("dicom_metadata", {})
+
+    st.header("📋 Generated Clinical Report")
+
+    # Display metadata
+    if metadata:
+        with st.expander("📊 DICOM Metadata", expanded=False):
+            col1, col2 = st.columns(2)
+            with col1:
+                if metadata.get("patient_id"):
+                    st.write(f"**Patient ID:** {metadata['patient_id']}")
+                if metadata.get("patient_name"):
+                    st.write(f"**Patient Name:** {metadata['patient_name']}")
+            with col2:
+                if metadata.get("study_id"):
+                    st.write(f"**Study ID:** {metadata['study_id']}")
+                if metadata.get("series_id"):
+                    st.write(f"**Series ID:** {metadata['series_id']}")
+            
+            # Show series processing info
+            if metadata.get("total_images_processed"):
+                st.divider()
+                st.write(f"**Total Images Processed:** {metadata['total_images_processed']}")
+                if metadata.get("total_images_uploaded"):
+                    st.write(f"**Total Images Uploaded:** {metadata['total_images_uploaded']}")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("🏥 Clinical Report")
+        if isinstance(report, dict):
+            if report.get("clinical_history"):
+                st.write("**Clinical History:**")
+                st.write(report["clinical_history"])
+
+            if report.get("findings"):
+                st.write("**Findings:**")
+                st.write(report["findings"])
+        else:
+            st.write(report)
+
+    with col2:
+        st.subheader("🔍 Diagnosis")
+        if diagnosis.get("abnormalities"):
+            st.write("**Detected Abnormalities:**")
+            for abnormality in diagnosis["abnormalities"]:
+                st.write(f"- {abnormality}")
+        else:
+            st.info("No abnormalities detected")
+
+        if diagnosis.get("confidence_scores"):
+            st.write("**Confidence Scores:**")
+            for key, value in diagnosis["confidence_scores"].items():
+                st.write(f"- {key}: {value:.2%}")
+
+    if isinstance(report, dict):
+        if report.get("impression"):
+            st.subheader("💭 Impression")
+            st.write(report["impression"])
+
+        if report.get("recommendations"):
+            st.subheader("💡 Recommendations")
+            st.write(report["recommendations"])
+
+    # Download option
+    st.download_button(
+        label="📥 Download Report as JSON",
+        data=json.dumps(result, indent=2, default=str),
+        file_name="clinical_report.json",
+        mime="application/json"
+    )
+
+
 api_client = APIClient()
 
 # Health check
@@ -39,11 +122,15 @@ with st.expander("ℹ️ Instructions for Kheops Downloads", expanded=False):
     """)
 
 # Allow multiple file upload - accept all file types since DICOM files may not have extensions
+# Note: Streamlit default max upload is 200MB per file, but backend accepts up to 500MB
+# For ZIP files up to 500MB, use the API directly or configure Streamlit server.maxUploadSize
 uploaded_files = st.file_uploader(
-    "Choose DICOM file(s) - Files without extensions are supported", 
+    "Choose DICOM file(s) or ZIP archive (up to 500 MB) - Files without extensions are supported", 
     type=None,  # Accept all files - we'll validate DICOM format server-side
     accept_multiple_files=True,
-    help="Select one or multiple Brain CT DICOM files. Files without extensions (like from Kheops) are supported. Use Ctrl/Cmd+Click to select multiple files."
+    help="Select one or multiple Brain CT DICOM files, or a ZIP archive containing DICOM files. "
+         "Files without extensions (like from Kheops) are supported. "
+         "Maximum upload size: 500 MB. Use Ctrl/Cmd+Click to select multiple files."
 )
 
 if uploaded_files:
@@ -131,76 +218,3 @@ if uploaded_files:
 if "report_result" in st.session_state:
     st.divider()
     display_report(st.session_state["report_result"])
-
-
-def display_report(result: dict):
-    """Display the generated report."""
-    st.header("📋 Generated Clinical Report")
-
-    report = result.get("report", {})
-    diagnosis = result.get("diagnosis", {})
-    metadata = result.get("dicom_metadata", {})
-
-    # Display metadata
-    if metadata:
-        with st.expander("📊 DICOM Metadata", expanded=False):
-            col1, col2 = st.columns(2)
-            with col1:
-                if metadata.get("patient_id"):
-                    st.write(f"**Patient ID:** {metadata['patient_id']}")
-                if metadata.get("patient_name"):
-                    st.write(f"**Patient Name:** {metadata['patient_name']}")
-            with col2:
-                if metadata.get("study_id"):
-                    st.write(f"**Study ID:** {metadata['study_id']}")
-                if metadata.get("series_id"):
-                    st.write(f"**Series ID:** {metadata['series_id']}")
-            
-            # Show series processing info
-            if metadata.get("total_images_processed"):
-                st.divider()
-                st.write(f"**Total Images Processed:** {metadata['total_images_processed']}")
-                if metadata.get("total_images_uploaded"):
-                    st.write(f"**Total Images Uploaded:** {metadata['total_images_uploaded']}")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("🏥 Clinical Report")
-        if report.get("clinical_history"):
-            st.write("**Clinical History:**")
-            st.write(report["clinical_history"])
-
-        if report.get("findings"):
-            st.write("**Findings:**")
-            st.write(report["findings"])
-
-    with col2:
-        st.subheader("🔍 Diagnosis")
-        if diagnosis.get("abnormalities"):
-            st.write("**Detected Abnormalities:**")
-            for abnormality in diagnosis["abnormalities"]:
-                st.write(f"- {abnormality}")
-        else:
-            st.info("No abnormalities detected")
-
-        if diagnosis.get("confidence_scores"):
-            st.write("**Confidence Scores:**")
-            for key, value in diagnosis["confidence_scores"].items():
-                st.write(f"- {key}: {value:.2%}")
-
-    if report.get("impression"):
-        st.subheader("💭 Impression")
-        st.write(report["impression"])
-
-    if report.get("recommendations"):
-        st.subheader("💡 Recommendations")
-        st.write(report["recommendations"])
-
-    # Download option
-    st.download_button(
-        label="📥 Download Report as JSON",
-        data=json.dumps(result, indent=2, default=str),
-        file_name="clinical_report.json",
-        mime="application/json"
-    )

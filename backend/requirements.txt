@@ -7,6 +7,12 @@ monai==1.3.0
 torch==2.1.0
 numpy==1.24.3
 pydicom==2.4.3
+# Pixel decoding libraries for compressed DICOM (JPEG, JPEG-LS, JPEG2000)
+pylibjpeg>=1.4.0
+pylibjpeg-libjpeg>=1.3.0
+pylibjpeg-openjpeg>=1.3.0
+# Alternative: gdcm (uncomment if pylibjpeg doesn't work)
+# gdcm>=3.0.0
 requests==2.31.0
 httpx==0.25.2
 pytest==7.4.3

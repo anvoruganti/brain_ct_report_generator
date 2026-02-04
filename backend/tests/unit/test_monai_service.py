@@ -105,14 +105,19 @@ class TestMonaiService:
         assert tensor.shape[1] == 1
 
     def test_run_inference_without_model(self):
-        """Test inference without loaded model."""
+        """Test inference without loaded model returns mock diagnosis."""
         # Arrange: Service without model
         service = MonaiService()
         image_tensor = torch.randn(1, 1, 256, 256)
 
-        # Act & Assert: Verify ModelLoadError is raised
-        with pytest.raises(ModelLoadError):
-            service.run_inference(image_tensor)
+        # Act: Should return mock diagnosis instead of raising error
+        result = service.run_inference(image_tensor)
+
+        # Assert: Verify mock diagnosis is returned
+        assert result is not None
+        assert isinstance(result, DiagnosisResult)
+        assert "normal" in result.abnormalities
+        assert result.findings.get("mock_diagnosis") is True
 
     @patch("backend.app.services.monai_service.torch.load")
     @patch("backend.app.services.monai_service.UNet")

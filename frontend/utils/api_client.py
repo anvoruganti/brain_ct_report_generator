@@ -115,15 +115,26 @@ class APIClient:
             Report dictionary
 
         Raises:
-            requests.exceptions.RequestException: If request fails
+            RuntimeError: If request fails, with detailed backend error information
         """
+        import json
+        
         files = [("dicom_files", (filename, dicom_file, "application/dicom"))]
         response = requests.post(
             f"{self.base_url}/api/inference/from-dicom",
             files=files,
             timeout=300,  # Increased timeout for multiple files
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            try:
+                detail = response.json()
+            except Exception:
+                detail = {"raw_text": response.text[:4000]}
+            
+            error_msg = f"Backend error {response.status_code}:\n{json.dumps(detail, indent=2)}"
+            raise RuntimeError(error_msg)
+        
         return response.json()
 
     def generate_report_from_dicom_series(self, dicom_files: List[bytes], filenames: List[str]) -> Dict:
@@ -138,8 +149,10 @@ class APIClient:
             Report dictionary
 
         Raises:
-            requests.exceptions.RequestException: If request fails
+            RuntimeError: If request fails, with detailed backend error information
         """
+        import json
+        
         files = [
             ("dicom_files", (filename, dicom_bytes, "application/dicom"))
             for dicom_bytes, filename in zip(dicom_files, filenames)
@@ -149,5 +162,14 @@ class APIClient:
             files=files,
             timeout=600,  # Longer timeout for multiple files
         )
-        response.raise_for_status()
+        
+        if not response.ok:
+            try:
+                detail = response.json()
+            except Exception:
+                detail = {"raw_text": response.text[:4000]}
+            
+            error_msg = f"Backend error {response.status_code}:\n{json.dumps(detail, indent=2)}"
+            raise RuntimeError(error_msg)
+        
         return response.json()

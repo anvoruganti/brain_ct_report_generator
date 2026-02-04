@@ -1,5 +1,7 @@
 """DICOM file parsing service."""
 
+import logging
+import traceback
 from io import BytesIO
 from typing import Dict, Any
 
@@ -9,6 +11,8 @@ import pydicom
 from backend.app.models.domain import DicomData
 from backend.app.services.interfaces import IDicomParser
 from backend.app.utils.exceptions import DicomParseError
+
+logger = logging.getLogger(__name__)
 
 
 class DicomParserService(IDicomParser):
@@ -98,6 +102,9 @@ class DicomParserService(IDicomParser):
     def extract_pixel_array(self, dicom_data: DicomData) -> np.ndarray:
         """
         Extract pixel array from DICOM data.
+        
+        Handles compressed pixel data (JPEG, JPEG-LS, JPEG2000) using pylibjpeg
+        or gdcm if available. Provides detailed error messages if pixel decoding fails.
 
         Args:
             dicom_data: Parsed DICOM data
@@ -106,7 +113,7 @@ class DicomParserService(IDicomParser):
             NumPy array of pixel data
 
         Raises:
-            DicomParseError: If extraction fails
+            DicomParseError: If extraction fails, with detailed error message
         """
         try:
             dicom_bytes = dicom_data.metadata.get("raw_bytes")
@@ -117,34 +124,76 @@ class DicomParserService(IDicomParser):
             dicom_file = None
             try:
                 dicom_file = pydicom.dcmread(BytesIO(dicom_bytes))
-            except Exception:
+            except Exception as e:
                 # If standard read fails, try with force=True
                 try:
                     dicom_file = pydicom.dcmread(BytesIO(dicom_bytes), force=True)
-                except Exception as e:
-                    raise DicomParseError(f"Failed to read DICOM file: {str(e)}")
+                except Exception as force_error:
+                    logger.error(f"DICOM read failed: {str(e)}. Force read also failed: {str(force_error)}")
+                    logger.debug(traceback.format_exc())
+                    raise DicomParseError(
+                        f"Failed to read DICOM file: {str(e)}. "
+                        f"Force parsing also failed: {str(force_error)}"
+                    )
             
             if dicom_file is None:
                 raise DicomParseError("Failed to read DICOM file")
             
-            # Verify pixel data is available
-            if not hasattr(dicom_file, 'pixel_array'):
+            # Check for pixel data
+            if not hasattr(dicom_file, 'PixelData') and not hasattr(dicom_file, 'pixel_array'):
                 raise DicomParseError(
                     "DICOM file does not contain pixel data. "
                     "This may be a metadata-only file."
                 )
             
+            # Get transfer syntax to diagnose compression issues
+            transfer_syntax = getattr(dicom_file, 'file_meta', {}).get('TransferSyntaxUID', 'Unknown') if hasattr(dicom_file, 'file_meta') else 'Unknown'
+            
+            # Try to extract pixel array
             try:
                 pixel_array = dicom_file.pixel_array
-            except AttributeError as e:
+            except Exception as pixel_error:
+                # Provide detailed error message based on transfer syntax
+                error_msg = f"Failed to extract pixel array: {str(pixel_error)}"
+                
+                # Check if it's a compression issue
+                if 'compressed' in str(pixel_error).lower() or 'jpeg' in str(pixel_error).lower() or 'decompress' in str(pixel_error).lower():
+                    error_msg += (
+                        f"\n\n⚠️ PIXEL DECODING ERROR - Compressed DICOM detected!\n"
+                        f"Transfer Syntax: {transfer_syntax}\n"
+                        f"This DICOM uses compressed pixel data (JPEG/JPEG-LS/JPEG2000).\n"
+                        f"Install pixel decoding libraries:\n"
+                        f"  pip install pylibjpeg pylibjpeg-libjpeg pylibjpeg-openjpeg\n"
+                        f"OR:\n"
+                        f"  pip install gdcm\n"
+                        f"\nCurrent error: {type(pixel_error).__name__}: {str(pixel_error)}"
+                    )
+                    logger.error(error_msg)
+                    logger.debug(traceback.format_exc())
+                else:
+                    logger.error(f"Pixel extraction error: {str(pixel_error)}")
+                    logger.debug(traceback.format_exc())
+                
+                raise DicomParseError(error_msg) from pixel_error
+
+            if pixel_array is None or pixel_array.size == 0:
                 raise DicomParseError(
-                    f"Failed to extract pixel array: {str(e)}. "
-                    "The DICOM file may be incomplete or corrupted."
+                    "Extracted pixel array is empty. "
+                    "The DICOM file may be corrupted or incomplete."
                 )
 
             return pixel_array.astype(np.float32)
+        except DicomParseError:
+            # Re-raise DicomParseError as-is (already has good error message)
+            raise
         except Exception as e:
-            raise DicomParseError(f"Failed to extract pixel array: {str(e)}") from e
+            # Catch any other exceptions and provide full traceback
+            logger.error(f"Unexpected error extracting pixel array: {str(e)}")
+            logger.debug(traceback.format_exc())
+            raise DicomParseError(
+                f"Failed to extract pixel array: {str(e)}. "
+                f"See logs for full traceback."
+            ) from e
 
     def normalize_image(self, image: np.ndarray) -> np.ndarray:
         """

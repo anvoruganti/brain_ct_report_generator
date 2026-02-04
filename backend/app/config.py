@@ -36,8 +36,12 @@ class Settings(BaseSettings):
         description="Path to MONAI model file",
     )
     monai_device: str = Field(
-        default="cuda",
-        description="Device for MONAI inference (cuda or cpu)",
+        default="auto",
+        description="Device for MONAI inference (auto, mps, cuda, or cpu). 'auto' detects best available.",
+    )
+    monai_batch_size: int = Field(
+        default=16,
+        description="Batch size for MONAI inference (8-32 recommended for M1 Mac, higher for CUDA)",
     )
 
     # LLM Configuration
@@ -48,6 +52,20 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(
         default="http://localhost:11434",
         description="Base URL for Ollama API",
+    )
+    llm_timeout: int = Field(
+        default=60,
+        description="Timeout in seconds for LLM requests",
+    )
+    
+    # Parallel Processing Configuration
+    chunk_size: int = Field(
+        default=10,
+        description="Number of DICOM files to process per chunk",
+    )
+    max_workers: int = Field(
+        default=4,
+        description="Maximum number of parallel workers for processing",
     )
 
     # FastAPI Configuration
@@ -66,6 +84,10 @@ class Settings(BaseSettings):
     cors_origins: List[str] = Field(
         default=["http://localhost:8501"],
         description="Allowed CORS origins",
+    )
+    max_upload_size_mb: int = Field(
+        default=500,
+        description="Maximum file upload size in MB (for ZIP files and DICOM series)",
     )
 
     # Logging Configuration
